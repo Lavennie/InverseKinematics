@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 3a418aa24d80e9f458e625e74adfc1e4
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - camera: {instanceID: 0}
+  - shadowMat: {fileID: 2100000, guid: a1ffe15f62c437e45b17046858133ed6, type: 2}
+  - ringMat: {fileID: 2100000, guid: bd69e2b9b9edcdf4abff4ad5970d8778, type: 2}
+  - intersectMat: {fileID: 2100000, guid: a98682808a1892d4d82443928483be3d, type: 2}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
