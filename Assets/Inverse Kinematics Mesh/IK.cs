@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -5,6 +6,8 @@ namespace InverseKinematicsMesh
 {
     public class IK : MonoBehaviour
     {
+        const float DEBUG_TIME = 100;
+
         public Camera camera;
         public Material shadowMat;
         public Material ringMat;
@@ -35,7 +38,7 @@ namespace InverseKinematicsMesh
 
             intersect0 = new GameObject("intersect [0]", typeof(MeshFilter), typeof(MeshRenderer)).GetComponent<MeshFilter>();
             intersect0.GetComponent<MeshRenderer>().material = intersectMat;
-            intersect0.mesh = CreateIntersectRangeMesh(Vector3.zero, shadow0.mesh, shadow0.transform.position, ring0.mesh, ring0.transform.position);
+            intersect0.mesh = CreateIntersectRangeMesh(Vector3.zero, shadow0, ring0);
         }
 
         private void Update()
@@ -43,18 +46,24 @@ namespace InverseKinematicsMesh
             //Ray ray = camera.ScreenPointToRay(Input.mousePosition);
             //rayPlane.Raycast(ray, out float hitDist);
             //ring0.transform.position = ray.origin + ray.direction * hitDist;
-            if (PointInMesh(target - shadow0.transform.position, shadow0.mesh))
+            if (PointInMesh(target - shadow0.transform.position, shadow0))
             {
             }
         }
 
-        public bool PointInMesh(Vector3 point, Mesh mesh)
+        public bool PointInMesh(Vector3 point, MeshFilter mesh, bool debug = false)
         {
-            for (int i = 0; i < mesh.triangles.Length; i += 3)
+            for (int i = 0; i < mesh.mesh.triangles.Length; i += 3)
             {
-                Vector3 v0 = mesh.vertices[mesh.triangles[i]];
-                Vector3 v1 = mesh.vertices[mesh.triangles[i + 1]];
-                Vector3 v2 = mesh.vertices[mesh.triangles[i + 2]];
+                Vector3 v0 = mesh.transform.TransformPoint(mesh.mesh.vertices[mesh.mesh.triangles[i]]);
+                Vector3 v1 = mesh.transform.TransformPoint(mesh.mesh.vertices[mesh.mesh.triangles[i + 1]]);
+                Vector3 v2 = mesh.transform.TransformPoint(mesh.mesh.vertices[mesh.mesh.triangles[i + 2]]);
+                if (debug)
+                {
+                    Debug.DrawLine(v0, v1, Color.green, 1);
+                    Debug.DrawLine(v1, v2, Color.green, 1);
+                    Debug.DrawLine(v0, v2, Color.green, 1);
+                }
                 if (PointInTriangle(new Vector2(point.z, point.y), 
                     new Vector2(v0.z, v0.y), new Vector2(v1.z, v1.y), new Vector2(v2.z, v2.y)))
                 {
@@ -63,7 +72,7 @@ namespace InverseKinematicsMesh
             }
             return false;
         }
-        public static float sign(Vector2 p1, Vector2 p2, Vector2 p3)
+        public static float Sign(Vector2 p1, Vector2 p2, Vector2 p3)
         {
             return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
         }
@@ -72,9 +81,9 @@ namespace InverseKinematicsMesh
             float d1, d2, d3;
             bool has_neg, has_pos;
 
-            d1 = sign(pt, v1, v2);
-            d2 = sign(pt, v2, v3);
-            d3 = sign(pt, v3, v1);
+            d1 = Sign(pt, v1, v2);
+            d2 = Sign(pt, v2, v3);
+            d3 = Sign(pt, v3, v1);
 
             has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
             has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
@@ -83,7 +92,6 @@ namespace InverseKinematicsMesh
         }
         public static bool LineIntersection(Vector2 p1, Vector2 p2, Vector2 p3, Vector2 p4, ref Vector2 intersection)
         {
-
             float Ax, Bx, Cx, Ay, By, Cy, d, e, f, num/*,offset*/;
             float x1lo, x1hi, y1lo, y1hi;
 
@@ -173,25 +181,139 @@ namespace InverseKinematicsMesh
             return true;
 
         }
+        public static bool LineMeshClosestIntersection(Vector3 a, Vector3 b, Vector3[] v, int[] e, out Vector3 intersection, out Edge edgeWithIntersect)
+        {
+            intersection = Vector3.zero;
+            edgeWithIntersect = new Edge(-1, Vector3.zero, Vector3.zero);
+            List<System.Tuple<Vector3, int>> intersections = new List<System.Tuple<Vector3, int>>();
+            for (int j = 0; j < e.Length; j += 2)
+            {
+                Vector2 p1 = new Vector2(a.z, a.y);
+                Vector2 p2 = new Vector2(b.z, b.y);
+                Vector2 p3 = new Vector2(v[e[j]].z, v[e[j]].y);
+                Vector2 p4 = new Vector2(v[e[j + 1]].z, v[e[j + 1]].y);
+                Vector2 intersect = Vector2.zero;
+                if (LineIntersection(p1, p2, p3, p4, ref intersect))
+                {
+                    intersections.Add(new System.Tuple<Vector3, int>(new Vector3(0, intersect.y, intersect.x), j / 2));
+                }
+            }
+            float minDist = float.MaxValue;
+            for (int i = 0; i < intersections.Count; i++)
+            {
+                float dist = Vector3.Distance(a, intersections[i].Item1);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    intersection = intersections[i].Item1;
+                    edgeWithIntersect = new Edge(intersections[i].Item2, v[e[2 * intersections[i].Item2]], v[e[2 * intersections[i].Item2 + 1]]);
+                }
+            }
+            return intersections.Count > 0;
+        }
+        public static List<Vector3> LineMeshIntersection(Vector2 p1, Vector2 p2, Vector3[] v, int[] e)
+        {
+            List<Vector3> intersections = new List<Vector3>();
+            for (int j = 0; j < e.Length; j += 2)
+            {
+                Vector2 p3 = new Vector2(v[e[j]].z, v[e[j]].y);
+                Vector2 p4 = new Vector2(v[e[j + 1]].z, v[e[j + 1]].y);
+                Vector2 intersection = Vector2.zero;
+                if (LineIntersection(p1, p2, p3, p4, ref intersection))
+                {
+                    intersections.Add(intersection);
+                }
+            }
+            return intersections;
+        }
+
+        public Vector3[] GetShadowOutlineVertices(int arcCount, MeshFilter shadow)
+        {
+            Vector3[] v = new Vector3[GetShadowVertexOutlineCount(arcCount)];
+            // origin
+            v[0] = shadow.mesh.vertices[0];
+            int vi = 1;
+            // left side
+            for (int i = 1; i < arcCount; i++)
+            {
+                v[vi] = shadow.mesh.vertices[GetShadowVertexIndex(i, i, 0)];
+                vi++;
+            }
+            // left end
+            for (int i = arcCount; i > 0; i--)
+            {
+                v[vi] = shadow.mesh.vertices[GetShadowVertexIndex(i, arcCount, 0)];
+                vi++;
+            }
+            // center end
+            v[vi] = shadow.mesh.vertices[GetShadowVertexIndex(0, arcCount, 0)];
+            vi++;
+            // right end
+            for (int i = 1; i < arcCount + 1; i++)
+            {
+                v[vi] = shadow.mesh.vertices[GetShadowVertexIndex(i, arcCount, 1)];
+                vi++;
+            }
+            // right side
+            for (int i = arcCount - 1; i > 0; i--)
+            {
+                v[vi] = shadow.mesh.vertices[GetShadowVertexIndex(i, i, 1)];
+                vi++;
+            }
+            return v;
+            /*// sides
+            for (int i = 0; i < arcCount; i++)
+            {
+                v[2 * i + 1] = shadow.mesh.vertices[GetShadowVertexIndex(1, 1, 0)];
+                v[2 * i + 2] = shadow.mesh.vertices[GetShadowVertexIndex(1, 1, 1)];
+            }
+            // end
+            v[2 * arcCount + 1] = shadow.mesh.vertices[GetShadowVertexIndex(0, arcCount, 0)];
+            for (int i = 0; i < arcCount - 1; i++)
+            {
+                v[2 * arcCount + 2 + 2 * i] = shadow.mesh.vertices[GetShadowVertexIndex(i + 1, arcCount, 0)];
+                v[2 * arcCount + 2 + 2 * i + 1] = shadow.mesh.vertices[GetShadowVertexIndex(i + 1, arcCount, 1)];
+            }*/
+        }
+
+        public void DebugDrawOutline(Vector3[] v, int[] e, Color color)
+        {
+            for (int i = 0; i < e.Length; i += 2)
+            {
+                Debug.DrawLine(v[e[i]], v[e[i + 1]], color, DEBUG_TIME);
+            }
+        }
+        public void DebugDrawEdge(Vector3 a, Vector3 b, Color color)
+        {
+            Debug.DrawLine(a, b, color, DEBUG_TIME);
+        }
+        public void DebugDrawEdge(Edge edge, Color color)
+        {
+            Debug.DrawLine(edge.a, edge.b, color, DEBUG_TIME);
+        }
+        public void DebugDrawEdge(Edge edge, Vector3 origin, Color color)
+        {
+            Debug.DrawLine(edge.a + origin, edge.b + origin, color, DEBUG_TIME);
+        }
 
         public Mesh CreateShadowRangeMesh()
         {
             Mesh mesh = new Mesh();
 
-            Vector3[] vertices = new Vector3[GetVertexCount(chain.Length)];
+            Vector3[] vertices = new Vector3[GetShadowVertexCount(chain.Length)];
             SetVertex(0, Vector3.zero, vertices);
             // middle line
             float length = 0;
             for (int i = 0; i < chain.Length; i++)
             {
                 length += chain[i].length;
-                SetVertex(GetVertexIndex(0, i + 1, 0), transform.forward * length, vertices);
+                SetVertex(GetShadowVertexIndex(0, i + 1, 0), transform.forward * length, vertices);
             }
             // side lines
             for (int i = 1; i < chain.Length + 1; i++)
             {
-                AddLineVertices(i, 0, vertices);
-                AddLineVertices(i, 1, vertices);
+                AddShadowLineVertices(i, 0, vertices);
+                AddShadowLineVertices(i, 1, vertices);
             }
             mesh.SetVertices(vertices);
 
@@ -201,37 +323,37 @@ namespace InverseKinematicsMesh
             for (int i = 0; i < chain.Length; i++)
             {
                 // expanding triangles side 1
-                indices[3 * ti]     = GetVertexIndex(i, i, 0);
-                indices[3 * ti + 1] = GetVertexIndex(i + 1, i + 1, 0);
-                indices[3 * ti + 2] = GetVertexIndex(i, i + 1, 0);
+                indices[3 * ti]     = GetShadowVertexIndex(i, i, 0);
+                indices[3 * ti + 1] = GetShadowVertexIndex(i + 1, i + 1, 0);
+                indices[3 * ti + 2] = GetShadowVertexIndex(i, i + 1, 0);
                 ti++;
 
                 for (int j = 0; j < i; j++)
                 {
                     // center side 1
-                    indices[3 * ti] = GetVertexIndex(i - j, i, 0);
-                    indices[3 * ti + 1] = GetVertexIndex(i - j, i + 1, 0);
-                    indices[3 * ti + 2] = GetVertexIndex(i - j - 1, i + 1, 0);
+                    indices[3 * ti] = GetShadowVertexIndex(i - j, i, 0);
+                    indices[3 * ti + 1] = GetShadowVertexIndex(i - j, i + 1, 0);
+                    indices[3 * ti + 2] = GetShadowVertexIndex(i - j - 1, i + 1, 0);
                     ti++;
-                    indices[3 * ti] = GetVertexIndex(i - j, i, 0);
-                    indices[3 * ti + 1] = GetVertexIndex(i - j - 1, i + 1, 0);
-                    indices[3 * ti + 2] = GetVertexIndex(i - j - 1, i, 0);
+                    indices[3 * ti] = GetShadowVertexIndex(i - j, i, 0);
+                    indices[3 * ti + 1] = GetShadowVertexIndex(i - j - 1, i + 1, 0);
+                    indices[3 * ti + 2] = GetShadowVertexIndex(i - j - 1, i, 0);
                     ti++;
                     // center side 2
-                    indices[3 * ti] = GetVertexIndex(i - j, i, 1);
-                    indices[3 * ti + 1] = GetVertexIndex(i - j - 1, i + 1, 1);
-                    indices[3 * ti + 2] = GetVertexIndex(i - j, i + 1, 1);
+                    indices[3 * ti] = GetShadowVertexIndex(i - j, i, 1);
+                    indices[3 * ti + 1] = GetShadowVertexIndex(i - j - 1, i + 1, 1);
+                    indices[3 * ti + 2] = GetShadowVertexIndex(i - j, i + 1, 1);
                     ti++;
-                    indices[3 * ti] = GetVertexIndex(i - j, i, 1);
-                    indices[3 * ti + 1] = GetVertexIndex(i - j - 1, i, 1);
-                    indices[3 * ti + 2] = GetVertexIndex(i - j - 1, i + 1, 1);
+                    indices[3 * ti] = GetShadowVertexIndex(i - j, i, 1);
+                    indices[3 * ti + 1] = GetShadowVertexIndex(i - j - 1, i, 1);
+                    indices[3 * ti + 2] = GetShadowVertexIndex(i - j - 1, i + 1, 1);
                     ti++;
                 }
 
                 // expanding triangles side 2
-                indices[3 * ti]     = GetVertexIndex(i, i, 1);
-                indices[3 * ti + 1] = GetVertexIndex(i, i + 1, 1);
-                indices[3 * ti + 2] = GetVertexIndex(i + 1, i + 1, 1);
+                indices[3 * ti]     = GetShadowVertexIndex(i, i, 1);
+                indices[3 * ti + 1] = GetShadowVertexIndex(i, i + 1, 1);
+                indices[3 * ti + 2] = GetShadowVertexIndex(i + 1, i + 1, 1);
                 ti++;
             }
 
@@ -261,7 +383,7 @@ namespace InverseKinematicsMesh
             }
             // outer circle
             point = transform.forward * outer;
-            vertices[ringVertexCount] = point;
+            SetVertex(ringVertexCount, point, vertices);
             for (int i = 1; i < ringVertexCount; i++)
             {
                 point = rot * point;
@@ -288,29 +410,349 @@ namespace InverseKinematicsMesh
 
             return mesh;
         }
-        public Mesh CreateIntersectRangeMesh(Vector3 newPos, Mesh shadow, Vector3 shadowPos, Mesh ring, Vector3 ringPos)
+        public IEnumerator FollowOutline(MeshFilter m1, MeshFilter m2, Vector3[] v1, int[] e1, Vector3[] v2, int[] e2, List<Vector3> vertices, List<int> loopEnds)
         {
-            Vector3[] v1 = shadow.vertices; // in world position
+            // start with edge, check for intersections with mesh2
+            // -   there are intersections (do only for closest intersection): continue from edge on which closest intersection is
+            // -   there are no intersections: check end vertex of edge, continue to next edge
+            vertices = new List<Vector3>();
+            loopEnds = new List<int>();
+            int currentMesh = 0;
+            Edge currentEdge = new Edge(0, v1[e1[0]], v1[e1[1]]);
+
+            // check all edges of first mesh
+            for (int i = 0; i < e1.Length; i += 2)
+            {
+                yield return new WaitUntil(() => Input.GetKeyDown(KeyCode.Space));
+                yield return new WaitForSeconds(0.1f);
+                //currentEdge = new Edge(0, v1[e1[i]], v1[e1[i + 1]]);
+                DebugDrawEdge(currentEdge, Color.yellow);
+                Debug.Log("current edge: " + currentEdge.a + " ->" + currentEdge.b);
+
+                MeshFilter curMesh = (currentMesh == 0) ? m1 : m2;
+                MeshFilter otherMesh = (currentMesh == 0) ? m2 : m1;
+                Vector3[] curV = (currentMesh == 0) ? v1 : v2;
+                Vector3[] otherV = (currentMesh == 0) ? v2 : v1;
+                int[] curE = (currentMesh == 0) ? e1 : e2;
+                int[] otherE = (currentMesh == 0) ? e2 : e1;
+
+                bool intersects = LineMeshClosestIntersection(currentEdge.a, currentEdge.b, otherV, otherE, out Vector3 intersection, out Edge intersectEdge);
+                Debug.Log("intersects: " + intersects);
+                if (intersects)
+                {
+                    DebugDrawEdge(intersectEdge, Color.red);
+                    Debug.Log("intersect edge: " + intersectEdge.a + " ->" + intersectEdge.b);
+                    ChooseNextOutlineEdge(ref currentEdge, ref currentMesh, intersectEdge, intersection, curMesh, otherMesh, curV, otherV, curE, otherE);
+
+                    if (!vertices.Contains(currentEdge.a))
+                    {
+                        vertices.Add(currentEdge.a);
+                    }
+                    // a loop was created with outline
+                    else
+                    {
+                        loopEnds.Add(vertices.Count);
+                    }
+                }
+                else
+                {
+                    // whole edge is in other mesh
+                    if (PointInMesh(currentEdge.a, otherMesh))
+                    {
+                        Debug.Log("add vertex inside: " + currentEdge.a);
+                        vertices.Add(currentEdge.a);
+                    }
+                    // when whole edge is inside or outside other mesh
+                    currentEdge = new Edge(currentEdge.index + 1, currentEdge.b, curV[curE[2 * (currentEdge.index + 1) + 1]]);
+                }
+            }
+
+
+
+            /*bool intersects = LineMeshClosestIntersection(currentEdge.a, currentEdge.b, otherV, otherE, out Vector3 intersection, out Edge intersectEdge);
+
+            if (intersects)
+            {
+                //vertices.Add(intersection);
+                int previousMesh = currentMesh;
+                ChooseNextOutlineEdge(ref currentEdge, ref currentMesh, intersectEdge, intersection, curMesh, otherMesh, curV, otherV, curE, otherE);
+
+                if (!vertices.Contains(currentEdge.a))
+                {
+                    vertices.Add(currentEdge.a);
+                }
+                // a loop was created with outline
+                else
+                {
+                    loopStarts.Add()
+                }
+
+                /*if (previousMesh == currentMesh)
+                {
+                    vertices.Add(curV[curE[2 * currentEdge]]);
+                }
+                else
+                {
+                    vertices.Add(otherV[otherE[2 * currentEdge]]);
+                }*/
+                // edge intersects other mesh, both vertices can be inside, outside or one is inside and the other is outside other mesh
+                // check intersected edge on other mesh
+                //      check the two new edges made by splitting intersected mesh at intersection, and choose the one that continues outline
+
+                /*bool pointIn1 = PointInMesh(otherV[otherE[2 * intersectEdge]], curMesh);
+                bool pointIn2 = PointInMesh(otherV[otherE[2 * intersectEdge + 1]], curMesh);
+                bool intersects1 = LineMeshClosestIntersection(intersection, otherV[otherE[2 * intersectEdge]], curV, curE, out Vector3 intersection1, out int intersectEdge1);
+                bool intersects2 = LineMeshClosestIntersection(intersection, otherV[otherE[2 * intersectEdge + 1]], curV, curE, out Vector3 intersection2, out int intersectEdge2);
+                // swap checked mesh
+                if (pointIn1 && !intersects1) // choose side 1
+                {
+                    vertices.Add(otherV[otherE[2 * intersectEdge]]);
+                    int[] edges = GetOutlineEdgesWithVertex(otherV[otherE[2 * intersectEdge]], otherV, otherE);
+
+                    currentMesh = (currentMesh + 1) % 2;
+                    edgeIndex = (edges[0] == edgeIndex) ? edges[1] : edges[0];
+                    // repeat
+                    // swap current with other
+                    /*MeshFilter tempMesh = curMesh;
+                    curMesh = otherMesh;
+                    otherMesh = tempMesh;
+                    Vector3[] tempV = curV;
+                    curV = otherV;
+                    otherV = tempV;
+                    int[] tempE = curE;
+                    curE = otherE;
+                    otherE = tempE;*/
+                /*}
+                else if (pointIn2 && !intersects2)  // choose side 2
+                {
+                    vertices.Add(otherV[otherE[2 * intersectEdge + 1]]);
+                    int[] edges = GetOutlineEdgesWithVertex(otherV[otherE[2 * intersectEdge + 1]], otherV, otherE);
+
+                    currentMesh = (currentMesh + 1) % 2;
+                    currentEdge = (edges[0] == intersectEdge2) ? edges[1] : edges[0];
+                    // repeat
+                }
+                // do not swap checked mesh
+                else if (intersects1)  // choose side 1
+                {
+                    vertices.Add(intersection1);
+                    // choose edge (curV[curE[2 * intersectEdge1]], intersection1) or (intersection1, curV[curE[2 * intersectEdge1 + 1]])
+                }
+                else if (intersects2) // choose side 2
+                {
+
+                }*/
+
+            /*}
+            else
+            {
+                // whole edge is in other mesh
+                if (PointInMesh(currentEdge.a, otherMesh))
+                {
+                    vertices.Add(currentEdge.a);
+                }
+                // when whole edge is inside or outside other mesh
+                currentEdge = new Edge(currentEdge.index + 1, currentEdge.b, curV[curE[2 * (currentEdge.index + 1) + 1]]);
+                // repeat
+            }
+
+
+
+            /*if (GetFirstUnused(v1, usedV1, out int index))
+            {
+                if (PointInMesh(v1[index], m2))
+                {
+                    vertices.Add(v1[index]);
+                }
+                usedV1.Add(index);
+                List<Vector3> intersects = LineMeshIntersection(v1[e1[2 * index]], v1[e1[2 * index + 1]], v2, e2);
+                vertices.AddRange(intersects);
+                if (!usedV1.Contains(index + 1) && PointInMesh(v1[index + 1], m2))
+                {
+
+                }
+            }
+            else
+            {
+                FollowOutline(m2, m1, v2, e2, v1, e1, vertices, usedV2, usedV1);
+            }*/
+        }
+        public void ChooseNextOutlineEdge(ref Edge currentEdge, ref int currentMesh, Edge intersectEdge, Vector3 intersection, MeshFilter curMesh, MeshFilter otherMesh, Vector3[] curV, Vector3[] otherV, int[] curE, int[] otherE)
+        {
+            bool pointIn1 = PointInMesh(intersectEdge.a, curMesh);
+            bool pointIn2 = PointInMesh(intersectEdge.b, curMesh);
+            bool intersects1 = LineMeshClosestIntersection(intersection, intersectEdge.a, curV, curE, out Vector3 intersection1, out Edge intersectEdge1);
+            bool intersects2 = LineMeshClosestIntersection(intersection, intersectEdge.b, curV, curE, out Vector3 intersection2, out Edge intersectEdge2);
+            
+            DebugDrawEdge(intersectEdge1, Color.white);
+            DebugDrawEdge(intersectEdge2, Color.blue);
+            Debug.Log(intersectEdge.a + " -> " + intersectEdge.b);
+            Debug.Log(intersectEdge1.a + " -> " + intersectEdge1.b);
+            Debug.Log(intersectEdge2.a + " -> " + intersectEdge2.b);
+
+            currentMesh = (currentMesh + 1) % 2;
+            // swap checked mesh
+            if (pointIn1 && !intersects1) // choose side 1
+            {
+                //vertices.Add(otherV[otherE[2 * intersectEdge]]);
+                //Edge[] edges = GetOutlineEdgesWithVertex(intersectEdge.a, otherV, otherE);
+
+                currentEdge = intersectEdge1;
+                //currentEdge = (edges[0] == intersectEdge1) ? edges[1] : edges[0];
+                // repeat
+            }
+            else if (pointIn2 && !intersects2)  // choose side 2
+            {
+                //vertices.Add(otherV[otherE[2 * intersectEdge + 1]]);
+                //Edge[] edges = GetOutlineEdgesWithVertex(intersectEdge.b, otherV, otherE);
+
+                currentEdge = intersectEdge2;
+                //currentEdge = (edges[0] == intersectEdge2) ? edges[1] : edges[0];
+                // repeat
+            }
+            // do not swap checked mesh
+            else if (intersects1)  // choose side 1
+            {
+                //vertices.Add(intersection1);
+                // choose edge (curV[curE[2 * intersectEdge1]], intersection1) or (intersection1, curV[curE[2 * intersectEdge1 + 1]])
+
+                currentEdge = new Edge(intersectEdge1.index, intersectEdge1.a, otherV[otherE[2 * intersectEdge1.index + 1]]);
+                //currentEdge = intersectEdge1;
+
+            }
+            else if (intersects2) // choose side 2
+            {
+                currentEdge = new Edge(intersectEdge2.index, intersectEdge2.a, otherV[otherE[2 * intersectEdge2.index + 1]]);
+                //currentEdge = intersectEdge2;
+            }
+        }
+        public class Edge
+        {
+            public int index;
+            public Vector3 a, b;
+
+            public Edge(int index, Vector3 a, Vector3 b)
+            {
+                this.index = index;
+                this.a = a;
+                this.b = b;
+            }
+        }
+        public Edge[] GetOutlineEdgesWithVertex(Vector3 p, Vector3[] v, int[] e)
+        {
+            int foundCount = 0;
+            Edge[] edges = new Edge[2];
+            for (int i = 0; i < e.Length; i += 2)
+            {
+                if (v[e[i]] == p || v[e[i + 1]] == p)
+                {
+                    edges[foundCount] = new Edge(i / 2, v[e[i]], v[e[i + 1]]);
+                    foundCount++;
+                    if (foundCount == 2)
+                    {
+                        return edges;
+                    }
+                }
+            }
+            return edges;
+        }
+        public bool GetFirstUnused(Vector3[] v, List<int> used, out int index)
+        {
+            for (int i = 0; i < v.Length; i++)
+            {
+                if (!used.Contains(i))
+                {
+                    index = i;
+                    return true;
+                }
+            }
+            index = -1;
+            return false;
+        }
+        public bool GetFirstUnused(Vector3[] v, List<int> used, out Vector3 vector)
+        {
+            for (int i = 0; i < v.Length; i++)
+            {
+                if (!used.Contains(i))
+                {
+                    vector = v[i];
+                    return true;
+                }
+            }
+            vector = Vector3.zero;
+            return false;
+        }
+        public bool GetFirstUnused(int[] e, List<int> used, out int index)
+        {
+            for (int i = 0; i < e.Length; i++)
+            {
+                if (!used.Contains(i))
+                {
+                    index = i;
+                    return true;
+                }
+            }
+            index = -1;
+            return false;
+        }
+        public Mesh CreateIntersectRangeMesh(Vector3 newPos, MeshFilter shadow, MeshFilter ring)
+        {
+            Vector3[] v1 = GetShadowOutlineVertices(chain.Length, shadow); // in world position
+            int[] e1 = new int[2 * v1.Length];
             for (int i = 0; i < v1.Length; i++)
             {
-                v1[i] += shadowPos;
+                v1[i] = shadow.transform.TransformPoint(v1[i]);
+                e1[2 * i] = i;
+                e1[2 * i + 1] = (i + 1) % v1.Length;
             }
-            float inner = Vector3.Distance(ring.vertices[0], Vector3.zero);
-            float outer = Vector3.Distance(ring.vertices[ring.vertexCount - 1], Vector3.zero);
-            Vector3[] v2 = ring.vertices; // in world pos
+            //float inner = Vector3.Distance(ring.mesh.vertices[0], Vector3.zero);
+            //float outer = Vector3.Distance(ring.mesh.vertices[ring.mesh.vertexCount - 1], Vector3.zero);
+            Vector3[] v2 = ring.mesh.vertices; // in world pos
             for (int i = 0; i < v2.Length; i++)
             {
-                v2[i] += ringPos;
+                v2[i] = ring.transform.TransformPoint(v2[i]);
+            }
+            int circleVertCount = v2.Length / 2;
+            int[] e2 = new int[circleVertCount * 4];
+            for (int i = 0; i < circleVertCount; i++)
+            {
+                e2[2 * i] = i;
+                e2[2 * i + 1] = (i + 1) % circleVertCount;
+            }
+            for (int i = 0; i < circleVertCount; i++)
+            {
+                e2[2 * i + 2 * circleVertCount] = i + circleVertCount;
+                e2[2 * i + 1 + 2 * circleVertCount] = (i + 1) % circleVertCount + circleVertCount;
             }
 
             Mesh mesh = new Mesh();
 
             List<Vector3> vertices = new List<Vector3>();
-            // vertices of shadow mesh inside ring mesh
+            List<int> loopEnds = new List<int>();
+            StartCoroutine(FollowOutline(shadow, ring, v1, e1, v2, e2,  vertices, loopEnds));
+
+            /*Debug.Log(string.Join(' ', vertices));
+            Debug.Log(string.Join(' ', loopEnds));
+            for (int i = 0; i < loopEnds.Count; i++)
+            {
+                int start = (i == 0) ? 0 : loopEnds[i];
+                for (int k = start; k < loopEnds[i + 1]; k++)
+                {
+                    Debug.DrawLine(vertices[k], vertices[k + 1], Color.cyan, 2);
+                }
+            }
+
+            mesh.SetVertices(vertices.ToArray());*/
+            return mesh;
+
+
+
+
+
+            /*// vertices of shadow mesh inside ring mesh
             for (int i = 0; i < v1.Length; i++)
             {
-                float dist = Vector3.Distance(v1[i], ringPos);
-                if (inner <= dist && dist <= outer)
+                if (PointInMesh(v1[i], ring, i == 0))
                 {
                     vertices.Add(v1[i] - newPos);
                     new GameObject(i.ToString()).transform.position = v1[i] - newPos;
@@ -319,7 +761,7 @@ namespace InverseKinematicsMesh
             // vertices of ring mesh inside shadow mesh
             for (int i = 0; i < v2.Length; i++)
             {
-                if (PointInMesh(v2[i], shadow))
+                if (PointInMesh(v2[i], shadow, i == 0))
                 {
                     vertices.Add(v2[i] - newPos);
                     new GameObject(i.ToString()).transform.position = v2[i] - newPos;
@@ -327,22 +769,11 @@ namespace InverseKinematicsMesh
             }
             // edge outside edge intersection between shadow and ring mesh
             // shadow edges
-            List<int> shadowEdges = new List<int>() { 0, 2, 0, 3 };
-            for (int i = 1; i < chain.Length; i++)
+            List<int> shadowEdges = new List<int>();
+            for (int i = 0; i < v1.Length; i++)
             {
-                shadowEdges.Add(GetVertexIndex(i, i, 0));
-                shadowEdges.Add(GetVertexIndex(i + 1, i + 1, 0));
-
-                shadowEdges.Add(GetVertexIndex(i, i, 1));
-                shadowEdges.Add(GetVertexIndex(i + 1, i + 1, 1));
-            }
-            for (int i = 0; i < chain.Length; i++)
-            {
-                shadowEdges.Add(GetVertexIndex(i, chain.Length, 0));
-                shadowEdges.Add(GetVertexIndex(i + 1, chain.Length, 0));
-
-                shadowEdges.Add(GetVertexIndex(i, chain.Length, 1));
-                shadowEdges.Add(GetVertexIndex(i + 1, chain.Length, 1));
+                shadowEdges.Add(i);
+                shadowEdges.Add((i + 1) % v1.Length);
             }
             // ring edges
             List<int> ringEdges = new List<int>();
@@ -373,14 +804,14 @@ namespace InverseKinematicsMesh
                         new GameObject(i.ToString()).transform.position = vertices[vertices.Count - 1];
                     }
                 }
-            }
-
-
-            mesh.SetVertices(vertices.ToArray());
-
-            return mesh;
+            }*/
         }
-        private static int GetVertexCount(int arcCount)
+
+        private static int GetShadowVertexOutlineCount(int arcCount)
+        {
+            return 4 * arcCount;
+        }
+        private static int GetShadowVertexCount(int arcCount)
         {
             if (arcCount < 0)
             {
@@ -392,10 +823,10 @@ namespace InverseKinematicsMesh
             }
             else
             {
-                return GetVertexCount(arcCount - 1) + 2 * arcCount + 1;
+                return GetShadowVertexCount(arcCount - 1) + 2 * arcCount + 1;
             }
         }
-        private static int GetVertexIndex(int startArc, int currentArc, int constraintIndex)
+        private static int GetShadowVertexIndex(int startArc, int currentArc, int constraintIndex)
         {
             if (startArc < 0)
             {
@@ -403,20 +834,20 @@ namespace InverseKinematicsMesh
             }
             if (startArc == 0)
             {
-                return GetVertexCount(currentArc - 1);
+                return GetShadowVertexCount(currentArc - 1);
             }
             switch (constraintIndex)
             {
                 case 0:
-                    return GetVertexCount(currentArc - 1) + 2 * startArc - 1;
+                    return GetShadowVertexCount(currentArc - 1) + 2 * startArc - 1;
                 case 1:
-                    return GetVertexCount(currentArc - 1) + 2 * startArc;
+                    return GetShadowVertexCount(currentArc - 1) + 2 * startArc;
                 default:
                     Debug.LogError($"Constraint index is {constraintIndex} but only 0 and 1 are valid values");
                     return -1;
             }
         }
-        private void AddLineVertices(int startArc, int constraintIndex, Vector3[] vertices)
+        private void AddShadowLineVertices(int startArc, int constraintIndex, Vector3[] vertices)
         {
             Vector3 dir = transform.forward;
             Vector3 startPos = Vector3.zero;
@@ -426,12 +857,12 @@ namespace InverseKinematicsMesh
                 startPos += dir * chain[j].length;
             }
 
-            SetVertex(GetVertexIndex(startArc, startArc, constraintIndex), startPos, vertices);
+            SetVertex(GetShadowVertexIndex(startArc, startArc, constraintIndex), startPos, vertices);
             float dist = 0;
             for (int i = startArc; i < chain.Length; i++)
             {
                 dist += chain[i].length;
-                SetVertex(GetVertexIndex(startArc, i + 1, constraintIndex), startPos + dir * dist, vertices);
+                SetVertex(GetShadowVertexIndex(startArc, i + 1, constraintIndex), startPos + dir * dist, vertices);
             }
         }
         private void SetVertex(int index, Vector3 vec, Vector3[] vertices)
