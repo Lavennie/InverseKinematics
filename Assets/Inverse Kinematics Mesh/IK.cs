@@ -6,7 +6,7 @@ namespace InverseKinematicsMesh
 {
     public class IK : MonoBehaviour
     {
-        const float DEBUG_TIME = 100;
+        const float DEBUG_TIME = 2;
 
         public Camera camera;
         public Material shadowMat;
@@ -181,13 +181,24 @@ namespace InverseKinematicsMesh
             return true;
 
         }
-        public static bool LineMeshClosestIntersection(Vector3 a, Vector3 b, Vector3[] v, int[] e, out Vector3 intersection, out Edge edgeWithIntersect)
+        public static bool LineMeshClosestIntersection(Vector3 a, Vector3 b, Vector3[] v, int[] e, List<int> ignoreEdges, out Vector3 intersection, out Edge edgeWithIntersect)
         {
             intersection = Vector3.zero;
             edgeWithIntersect = new Edge(-1, Vector3.zero, Vector3.zero);
             List<System.Tuple<Vector3, int>> intersections = new List<System.Tuple<Vector3, int>>();
             for (int j = 0; j < e.Length; j += 2)
             {
+                bool ignore = false;
+                for (int k = 0; k < ignoreEdges.Count; k += 2)
+                {
+                    if (e[j] == ignoreEdges[k] && e[j + 1] == ignoreEdges[k + 1])
+                    {
+                        ignore = true;
+                        break;
+                    }
+                }
+                if (ignore) { continue; }
+
                 Vector2 p1 = new Vector2(a.z, a.y);
                 Vector2 p2 = new Vector2(b.z, b.y);
                 Vector2 p3 = new Vector2(v[e[j]].z, v[e[j]].y);
@@ -418,213 +429,104 @@ namespace InverseKinematicsMesh
             vertices = new List<Vector3>();
             loopEnds = new List<int>();
             int currentMesh = 0;
-            Edge currentEdge = new Edge(0, v1[e1[0]], v1[e1[1]]);
+            Edge currentEdge;
+            List<int> usedEdges = new List<int>();
 
             // check all edges of first mesh
             for (int i = 0; i < e1.Length; i += 2)
             {
-                yield return new WaitUntil(() => Input.GetKeyDown(KeyCode.Space));
-                yield return new WaitForSeconds(0.1f);
-                //currentEdge = new Edge(0, v1[e1[i]], v1[e1[i + 1]]);
-                DebugDrawEdge(currentEdge, Color.yellow);
-                Debug.Log("current edge: " + currentEdge.a + " ->" + currentEdge.b);
-
-                MeshFilter curMesh = (currentMesh == 0) ? m1 : m2;
-                MeshFilter otherMesh = (currentMesh == 0) ? m2 : m1;
-                Vector3[] curV = (currentMesh == 0) ? v1 : v2;
-                Vector3[] otherV = (currentMesh == 0) ? v2 : v1;
-                int[] curE = (currentMesh == 0) ? e1 : e2;
-                int[] otherE = (currentMesh == 0) ? e2 : e1;
-
-                bool intersects = LineMeshClosestIntersection(currentEdge.a, currentEdge.b, otherV, otherE, out Vector3 intersection, out Edge intersectEdge);
-                Debug.Log("intersects: " + intersects);
-                if (intersects)
+                currentMesh = 0;
+                currentEdge = new Edge(i / 2, v1[e1[i]], v1[e1[i + 1]]);
+                usedEdges.Clear();
+                while (true)
                 {
-                    DebugDrawEdge(intersectEdge, Color.red);
-                    Debug.Log("intersect edge: " + intersectEdge.a + " ->" + intersectEdge.b);
-                    ChooseNextOutlineEdge(ref currentEdge, ref currentMesh, intersectEdge, intersection, curMesh, otherMesh, curV, otherV, curE, otherE);
-
-                    if (!vertices.Contains(currentEdge.a))
+                    if (i > -1)
                     {
-                        vertices.Add(currentEdge.a);
+                        yield return new WaitUntil(() => Input.GetKeyDown(KeyCode.Space));
+                        yield return new WaitForSeconds(0.01f);
                     }
-                    // a loop was created with outline
+                    MeshFilter curMesh = (currentMesh == 0) ? m1 : m2;
+                    MeshFilter otherMesh = (currentMesh == 0) ? m2 : m1;
+                    Vector3[] curV = (currentMesh == 0) ? v1 : v2;
+                    Vector3[] otherV = (currentMesh == 0) ? v2 : v1;
+                    int[] curE = (currentMesh == 0) ? e1 : e2;
+                    int[] otherE = (currentMesh == 0) ? e2 : e1;
+
+                    DebugDrawEdge(currentEdge, Color.yellow);
+
+                    bool intersects = LineMeshClosestIntersection(currentEdge.a, currentEdge.b, otherV, otherE, usedEdges, out Vector3 intersection, out Edge intersectEdge);
+                    usedEdges = new List<int>() { curE[2 * currentEdge.index], curE[2 * currentEdge.index + 1] };
+                    if (intersects)
+                    {
+                        Debug.Log("intersects");
+                        ChooseNextOutlineEdge(ref currentEdge, ref currentMesh, usedEdges, intersectEdge, intersection, curMesh, otherMesh, curV, otherV, curE, otherE);
+                        if (!vertices.Contains(currentEdge.a))
+                        {
+                            vertices.Add(currentEdge.a);
+                        }
+                        // a loop was created with outline
+                        else
+                        {
+                            loopEnds.Add(vertices.Count);
+                            Debug.Log("END LOOP");
+                            break;
+                        }
+                    }
                     else
                     {
-                        loopEnds.Add(vertices.Count);
+                        Debug.Log("does not intersect");
+                        // whole edge is in other mesh
+                        if (PointInMesh(currentEdge.a, otherMesh) || PointInMesh(currentEdge.b, otherMesh))
+                        {
+                            vertices.Add(currentEdge.a);
+                        }
+                        // when whole edge is inside or outside other mesh
+                        Edge[] edges = GetOutlineEdgesWithVertex(currentEdge.b, curV, curE);
+                        for (int k = 0; k < edges.Length; k++)
+                        {
+                            if (edges[k].index != currentEdge.index)
+                            {
+                                if (edges[k].a != currentEdge.b)
+                                {
+                                    currentEdge = new Edge(edges[k].index, currentEdge.b, edges[k].a);
+                                }
+                                else
+                                {
+                                    currentEdge = new Edge(edges[k].index, currentEdge.b, edges[k].b);
+                                }
+                                break;
+                            }
+                        }
+                        usedEdges.Clear();
                     }
                 }
-                else
-                {
-                    // whole edge is in other mesh
-                    if (PointInMesh(currentEdge.a, otherMesh))
-                    {
-                        Debug.Log("add vertex inside: " + currentEdge.a);
-                        vertices.Add(currentEdge.a);
-                    }
-                    // when whole edge is inside or outside other mesh
-                    currentEdge = new Edge(currentEdge.index + 1, currentEdge.b, curV[curE[2 * (currentEdge.index + 1) + 1]]);
-                }
             }
-
-
-
-            /*bool intersects = LineMeshClosestIntersection(currentEdge.a, currentEdge.b, otherV, otherE, out Vector3 intersection, out Edge intersectEdge);
-
-            if (intersects)
-            {
-                //vertices.Add(intersection);
-                int previousMesh = currentMesh;
-                ChooseNextOutlineEdge(ref currentEdge, ref currentMesh, intersectEdge, intersection, curMesh, otherMesh, curV, otherV, curE, otherE);
-
-                if (!vertices.Contains(currentEdge.a))
-                {
-                    vertices.Add(currentEdge.a);
-                }
-                // a loop was created with outline
-                else
-                {
-                    loopStarts.Add()
-                }
-
-                /*if (previousMesh == currentMesh)
-                {
-                    vertices.Add(curV[curE[2 * currentEdge]]);
-                }
-                else
-                {
-                    vertices.Add(otherV[otherE[2 * currentEdge]]);
-                }*/
-                // edge intersects other mesh, both vertices can be inside, outside or one is inside and the other is outside other mesh
-                // check intersected edge on other mesh
-                //      check the two new edges made by splitting intersected mesh at intersection, and choose the one that continues outline
-
-                /*bool pointIn1 = PointInMesh(otherV[otherE[2 * intersectEdge]], curMesh);
-                bool pointIn2 = PointInMesh(otherV[otherE[2 * intersectEdge + 1]], curMesh);
-                bool intersects1 = LineMeshClosestIntersection(intersection, otherV[otherE[2 * intersectEdge]], curV, curE, out Vector3 intersection1, out int intersectEdge1);
-                bool intersects2 = LineMeshClosestIntersection(intersection, otherV[otherE[2 * intersectEdge + 1]], curV, curE, out Vector3 intersection2, out int intersectEdge2);
-                // swap checked mesh
-                if (pointIn1 && !intersects1) // choose side 1
-                {
-                    vertices.Add(otherV[otherE[2 * intersectEdge]]);
-                    int[] edges = GetOutlineEdgesWithVertex(otherV[otherE[2 * intersectEdge]], otherV, otherE);
-
-                    currentMesh = (currentMesh + 1) % 2;
-                    edgeIndex = (edges[0] == edgeIndex) ? edges[1] : edges[0];
-                    // repeat
-                    // swap current with other
-                    /*MeshFilter tempMesh = curMesh;
-                    curMesh = otherMesh;
-                    otherMesh = tempMesh;
-                    Vector3[] tempV = curV;
-                    curV = otherV;
-                    otherV = tempV;
-                    int[] tempE = curE;
-                    curE = otherE;
-                    otherE = tempE;*/
-                /*}
-                else if (pointIn2 && !intersects2)  // choose side 2
-                {
-                    vertices.Add(otherV[otherE[2 * intersectEdge + 1]]);
-                    int[] edges = GetOutlineEdgesWithVertex(otherV[otherE[2 * intersectEdge + 1]], otherV, otherE);
-
-                    currentMesh = (currentMesh + 1) % 2;
-                    currentEdge = (edges[0] == intersectEdge2) ? edges[1] : edges[0];
-                    // repeat
-                }
-                // do not swap checked mesh
-                else if (intersects1)  // choose side 1
-                {
-                    vertices.Add(intersection1);
-                    // choose edge (curV[curE[2 * intersectEdge1]], intersection1) or (intersection1, curV[curE[2 * intersectEdge1 + 1]])
-                }
-                else if (intersects2) // choose side 2
-                {
-
-                }*/
-
-            /*}
-            else
-            {
-                // whole edge is in other mesh
-                if (PointInMesh(currentEdge.a, otherMesh))
-                {
-                    vertices.Add(currentEdge.a);
-                }
-                // when whole edge is inside or outside other mesh
-                currentEdge = new Edge(currentEdge.index + 1, currentEdge.b, curV[curE[2 * (currentEdge.index + 1) + 1]]);
-                // repeat
-            }
-
-
-
-            /*if (GetFirstUnused(v1, usedV1, out int index))
-            {
-                if (PointInMesh(v1[index], m2))
-                {
-                    vertices.Add(v1[index]);
-                }
-                usedV1.Add(index);
-                List<Vector3> intersects = LineMeshIntersection(v1[e1[2 * index]], v1[e1[2 * index + 1]], v2, e2);
-                vertices.AddRange(intersects);
-                if (!usedV1.Contains(index + 1) && PointInMesh(v1[index + 1], m2))
-                {
-
-                }
-            }
-            else
-            {
-                FollowOutline(m2, m1, v2, e2, v1, e1, vertices, usedV2, usedV1);
-            }*/
         }
-        public void ChooseNextOutlineEdge(ref Edge currentEdge, ref int currentMesh, Edge intersectEdge, Vector3 intersection, MeshFilter curMesh, MeshFilter otherMesh, Vector3[] curV, Vector3[] otherV, int[] curE, int[] otherE)
+        public void ChooseNextOutlineEdge(ref Edge currentEdge, ref int currentMesh, List<int> usedEdges, Edge intersectEdge, Vector3 intersection, MeshFilter curMesh, MeshFilter otherMesh, Vector3[] curV, Vector3[] otherV, int[] curE, int[] otherE)
         {
             bool pointIn1 = PointInMesh(intersectEdge.a, curMesh);
             bool pointIn2 = PointInMesh(intersectEdge.b, curMesh);
-            bool intersects1 = LineMeshClosestIntersection(intersection, intersectEdge.a, curV, curE, out Vector3 intersection1, out Edge intersectEdge1);
-            bool intersects2 = LineMeshClosestIntersection(intersection, intersectEdge.b, curV, curE, out Vector3 intersection2, out Edge intersectEdge2);
-            
-            DebugDrawEdge(intersectEdge1, Color.white);
-            DebugDrawEdge(intersectEdge2, Color.blue);
-            Debug.Log(intersectEdge.a + " -> " + intersectEdge.b);
-            Debug.Log(intersectEdge1.a + " -> " + intersectEdge1.b);
-            Debug.Log(intersectEdge2.a + " -> " + intersectEdge2.b);
+            bool intersects1 = LineMeshClosestIntersection(intersection, intersectEdge.a, curV, curE, usedEdges, out Vector3 intersection1, out Edge intersectEdge1);
+            bool intersects2 = LineMeshClosestIntersection(intersection, intersectEdge.b, curV, curE, usedEdges, out Vector3 intersection2, out Edge intersectEdge2);
 
-            currentMesh = (currentMesh + 1) % 2;
-            // swap checked mesh
             if (pointIn1 && !intersects1) // choose side 1
             {
-                //vertices.Add(otherV[otherE[2 * intersectEdge]]);
-                //Edge[] edges = GetOutlineEdgesWithVertex(intersectEdge.a, otherV, otherE);
-
-                currentEdge = intersectEdge1;
-                //currentEdge = (edges[0] == intersectEdge1) ? edges[1] : edges[0];
-                // repeat
+                currentEdge = new Edge(intersectEdge.index, intersection, (PointInMesh(intersectEdge.a, curMesh)) ? intersectEdge.a : intersectEdge.b);
             }
             else if (pointIn2 && !intersects2)  // choose side 2
             {
-                //vertices.Add(otherV[otherE[2 * intersectEdge + 1]]);
-                //Edge[] edges = GetOutlineEdgesWithVertex(intersectEdge.b, otherV, otherE);
-
-                currentEdge = intersectEdge2;
-                //currentEdge = (edges[0] == intersectEdge2) ? edges[1] : edges[0];
-                // repeat
+                currentEdge = new Edge(intersectEdge.index, intersection, (PointInMesh(intersectEdge.a, curMesh)) ? intersectEdge.a : intersectEdge.b);
             }
-            // do not swap checked mesh
             else if (intersects1)  // choose side 1
             {
-                //vertices.Add(intersection1);
-                // choose edge (curV[curE[2 * intersectEdge1]], intersection1) or (intersection1, curV[curE[2 * intersectEdge1 + 1]])
-
-                currentEdge = new Edge(intersectEdge1.index, intersectEdge1.a, otherV[otherE[2 * intersectEdge1.index + 1]]);
-                //currentEdge = intersectEdge1;
-
+                currentEdge = new Edge(intersectEdge.index, intersection, intersection1);
             }
             else if (intersects2) // choose side 2
             {
-                currentEdge = new Edge(intersectEdge2.index, intersectEdge2.a, otherV[otherE[2 * intersectEdge2.index + 1]]);
-                //currentEdge = intersectEdge2;
+                currentEdge = new Edge(intersectEdge.index, intersection, intersection2);
             }
+            // swap checked mesh
+            currentMesh = (currentMesh + 1) % 2;
         }
         public class Edge
         {
