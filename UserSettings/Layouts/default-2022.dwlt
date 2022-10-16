@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 1600
     height: 1117
   m_ShowMode: 4
-  m_Title: Console
+  m_Title: Inspector
   m_RootView: {fileID: 4}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -39,9 +39,9 @@ MonoBehaviour:
   m_Children: []
   m_Position:
     serializedVersion: 2
-    x: 626
+    x: 516
     y: 0
-    width: 649
+    width: 759
     height: 673
   m_MinSize: {x: 202, y: 221}
   m_MaxSize: {x: 4002, y: 4021}
@@ -290,7 +290,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 0
-    width: 626
+    width: 516
     height: 673
   m_MinSize: {x: 101, y: 121}
   m_MaxSize: {x: 4001, y: 4021}
@@ -458,7 +458,7 @@ MonoBehaviour:
   m_SceneHierarchy:
     m_TreeViewState:
       scrollPos: {x: 0, y: 0}
-      m_SelectedIDs: 061b0000
+      m_SelectedIDs: 
       m_LastClickedID: 0
       m_ExpandedIDs: 32fbffff9a660000
       m_RenameOverlay:
@@ -505,9 +505,9 @@ MonoBehaviour:
     m_Tooltip: 
   m_Pos:
     serializedVersion: 2
-    x: 626
+    x: 516
     y: 467
-    width: 647
+    width: 757
     height: 652
   m_ViewDataDictionary: {fileID: 0}
   m_OverlayCanvas:
@@ -540,9 +540,9 @@ MonoBehaviour:
       floating: 0
       collapsed: 0
       displayed: 1
-      snapOffset: {x: 0, y: 0}
+      snapOffset: {x: -326, y: 0}
       snapOffsetDelta: {x: 0, y: 0}
-      snapCorner: 0
+      snapCorner: 1
       id: unity-scene-view-toolbar
       index: 0
       layout: 1
@@ -743,13 +743,13 @@ MonoBehaviour:
   m_PlayAudio: 0
   m_AudioPlay: 0
   m_Position:
-    m_Target: {x: -1.2580582, y: -0.027654171, z: 1.2323047}
+    m_Target: {x: -5.3851194, y: 0.48354805, z: 3.0447464}
     speed: 2
-    m_Value: {x: -1.2580582, y: -0.027654171, z: 1.2323047}
+    m_Value: {x: -5.3851194, y: 0.48354805, z: 3.0447464}
   m_RenderMode: 0
   m_CameraMode:
-    drawMode: 0
-    name: Shaded
+    drawMode: 1
+    name: Wireframe
     section: Shading Mode
   m_ValidateTrueMetals: 0
   m_DoValidateTrueMetals: 0
@@ -791,13 +791,13 @@ MonoBehaviour:
     m_GridAxis: 1
     m_gridOpacity: 0.5
   m_Rotation:
-    m_Target: {x: -0.019203736, y: -0.70259535, z: -0.018974738, w: 0.71107775}
+    m_Target: {x: -0.033756174, y: -0.59418184, z: -0.024969678, w: 0.8032373}
     speed: 2
-    m_Value: {x: -0.019203732, y: -0.7025952, z: -0.018974734, w: 0.7110776}
+    m_Value: {x: -0.033756085, y: -0.5941803, z: -0.024969613, w: 0.80323523}
   m_Size:
-    m_Target: 1.8255497
+    m_Target: 4.241288
     speed: 2
-    m_Value: 1.8255497
+    m_Value: 4.241288
   m_Ortho:
     m_Target: 0
     speed: 2
@@ -986,7 +986,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 467
-    width: 625
+    width: 515
     height: 652
   m_ViewDataDictionary: {fileID: 0}
   m_OverlayCanvas:

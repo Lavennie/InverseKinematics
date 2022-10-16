@@ -421,30 +421,33 @@ namespace InverseKinematicsMesh
 
             return mesh;
         }
-        public IEnumerator FollowOutline(MeshFilter m1, MeshFilter m2, Vector3[] v1, int[] e1, Vector3[] v2, int[] e2, List<Vector3> vertices, List<int> loopEnds)
+        public void FollowOutline(MeshFilter m1, MeshFilter m2, Vector3[] v1, int[] e1, Vector3[] v2, int[] e2, List<Vector3> vertices, List<int> loopEnds)
         {
             // start with edge, check for intersections with mesh2
             // -   there are intersections (do only for closest intersection): continue from edge on which closest intersection is
             // -   there are no intersections: check end vertex of edge, continue to next edge
-            vertices = new List<Vector3>();
-            loopEnds = new List<int>();
+            //vertices = new List<Vector3>();
+            //loopEnds = new List<int>();
             int currentMesh = 0;
             Edge currentEdge;
             List<int> usedEdges = new List<int>();
+            HashSet<int> checkedEdges = new HashSet<int>();
 
             // check all edges of first mesh
             for (int i = 0; i < e1.Length; i += 2)
             {
+                if (checkedEdges.Contains(i / 2)) { continue; }
                 currentMesh = 0;
                 currentEdge = new Edge(i / 2, v1[e1[i]], v1[e1[i + 1]]);
                 usedEdges.Clear();
+                bool forceAddV = false;
                 while (true)
                 {
-                    if (i > -1)
+                    /*if (i > -1)
                     {
                         yield return new WaitUntil(() => Input.GetKeyDown(KeyCode.Space));
                         yield return new WaitForSeconds(0.01f);
-                    }
+                    }*/
                     MeshFilter curMesh = (currentMesh == 0) ? m1 : m2;
                     MeshFilter otherMesh = (currentMesh == 0) ? m2 : m1;
                     Vector3[] curV = (currentMesh == 0) ? v1 : v2;
@@ -452,33 +455,43 @@ namespace InverseKinematicsMesh
                     int[] curE = (currentMesh == 0) ? e1 : e2;
                     int[] otherE = (currentMesh == 0) ? e2 : e1;
 
-                    DebugDrawEdge(currentEdge, Color.yellow);
+                    if (currentMesh == 0)
+                    {
+                        checkedEdges.Add(currentEdge.index);
+                    }
 
                     bool intersects = LineMeshClosestIntersection(currentEdge.a, currentEdge.b, otherV, otherE, usedEdges, out Vector3 intersection, out Edge intersectEdge);
                     usedEdges = new List<int>() { curE[2 * currentEdge.index], curE[2 * currentEdge.index + 1] };
                     if (intersects)
                     {
-                        Debug.Log("intersects");
+                        if (forceAddV)
+                        {
+                            if (!ContainsApprox(vertices, currentEdge.a))
+                            {
+                                vertices.Add(currentEdge.a);
+                            }
+                            else
+                            {
+                                // a loop was created with outline
+                                if (loopEnds.Count == 0 || loopEnds[loopEnds.Count - 1] != vertices.Count)
+                                {
+                                    loopEnds.Add(vertices.Count);
+                                }
+                                break;
+                            }
+                        }
                         ChooseNextOutlineEdge(ref currentEdge, ref currentMesh, usedEdges, intersectEdge, intersection, curMesh, otherMesh, curV, otherV, curE, otherE);
-                        if (!vertices.Contains(currentEdge.a))
-                        {
-                            vertices.Add(currentEdge.a);
-                        }
-                        // a loop was created with outline
-                        else
-                        {
-                            loopEnds.Add(vertices.Count);
-                            Debug.Log("END LOOP");
-                            break;
-                        }
+                        forceAddV = true;
                     }
                     else
                     {
-                        Debug.Log("does not intersect");
                         // whole edge is in other mesh
                         if (PointInMesh(currentEdge.a, otherMesh) || PointInMesh(currentEdge.b, otherMesh))
                         {
-                            vertices.Add(currentEdge.a);
+                            if (!ContainsApprox(vertices, currentEdge.a))
+                            {
+                                vertices.Add(currentEdge.a);
+                            }
                         }
                         // when whole edge is inside or outside other mesh
                         Edge[] edges = GetOutlineEdgesWithVertex(currentEdge.b, curV, curE);
@@ -501,6 +514,18 @@ namespace InverseKinematicsMesh
                     }
                 }
             }
+        }
+        public bool ContainsApprox(List<Vector3> vertices, Vector3 v)
+        {
+            const float ERROR = 0.001f; 
+            for (int i = 0; i < vertices.Count; i++)
+            {
+                if (Vector3.Distance(vertices[i], v) < ERROR)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
         public void ChooseNextOutlineEdge(ref Edge currentEdge, ref int currentMesh, List<int> usedEdges, Edge intersectEdge, Vector3 intersection, MeshFilter curMesh, MeshFilter otherMesh, Vector3[] curV, Vector3[] otherV, int[] curE, int[] otherE)
         {
@@ -631,7 +656,25 @@ namespace InverseKinematicsMesh
 
             List<Vector3> vertices = new List<Vector3>();
             List<int> loopEnds = new List<int>();
-            StartCoroutine(FollowOutline(shadow, ring, v1, e1, v2, e2,  vertices, loopEnds));
+            FollowOutline(shadow, ring, v1, e1, v2, e2, vertices, loopEnds);
+            List<int> indices = new List<int>();
+            TriangulizeOutline(loopEnds, indices);
+            Debug.Log(string.Join(' ', vertices));
+            Debug.Log(string.Join(' ', loopEnds));
+            /*for (int i = 0; i < loopEnds.Count; i++)
+            {
+                int start = (i == 0) ? 0 : loopEnds[i - 1];
+                int range = loopEnds[i] - start;
+                for (int j = 0; j < range; j++)
+                {
+                    indices.Add(start + j);
+                    indices.Add(start + (j + 1) % range);
+                }
+            }*/
+            Debug.Log(string.Join(' ', indices));
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(indices, 0);
+            //DebugDrawOutline(vertices.ToArray(), indices.ToArray(), Color.green);
 
             /*Debug.Log(string.Join(' ', vertices));
             Debug.Log(string.Join(' ', loopEnds));
@@ -709,6 +752,64 @@ namespace InverseKinematicsMesh
             }*/
         }
 
+        private void TriangulizeOutline(List<Vector3> vertices, List<int> loopEnds, List<int> indices)
+        {
+            List<int> outlineI = new List<int>();
+            for (int i = 0; i < loopEnds.Count; i++)
+            {
+                int start = (i == 0) ? 0 : loopEnds[i - 1];
+                int range = loopEnds[i] - start;
+                for (int j = 0; j < range; j++)
+                {
+                    outlineI.Add(start + j);
+                    outlineI.Add(start + (j + 1) % range);
+                }
+            }
+            int[] e = outlineI.ToArray();
+
+            for (int i = 0; i < loopEnds.Count; i++)
+            {
+                int start = (i == 0) ? 0 : loopEnds[i - 1];
+                int range = loopEnds[i] - start;
+                int triangleCount = range - 2;
+                if (triangleCount == 1)
+                {
+                    indices.Add(start);
+                    indices.Add(start + 1);
+                    indices.Add(start + 2);
+                    continue;
+                }
+
+                Vector3[] v = vertices.GetRange(start, range).ToArray();
+                for (int j = 0; j < range; j++)
+                {
+                    int i0 = start + j;
+                    int i1 = start + (j + 1) % range;
+                    int i2 = start + (j + 2) % range;
+                    Vector2 p0 = new Vector2(vertices[i0].z, vertices[i0].y);
+                    Vector2 p2 = new Vector2(vertices[i2].z, vertices[i2].y);
+
+                    List<Vector3> intersections = LineMeshIntersection(p0, p2, v, e);
+                    if (intersections.Count == 0)
+                    {
+                        // check if edge is in/out of outline
+                        int i3 = start + (j + 3) % range;
+                        Vector3 p3 = new Vector3(vertices[i3].z, vertices[i3].y);
+                        Vector3 pi = (p0 + p2) / 2;
+                        // TODO: how to check when edge is inside outline
+                        // what even is inside of outline? define when creating the outline
+                        if (LineMeshIntersection(pi, p3, v, e).Count == 0)
+                        {
+
+                        }
+                    }
+
+                    indices.Add(start);
+                    indices.Add(start + j + 1);
+                    indices.Add(start + j + 2);
+                }
+            }
+        }
         private static int GetShadowVertexOutlineCount(int arcCount)
         {
             return 4 * arcCount;
