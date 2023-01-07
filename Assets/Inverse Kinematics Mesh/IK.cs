@@ -658,7 +658,7 @@ namespace InverseKinematicsMesh
             List<int> loopEnds = new List<int>();
             FollowOutline(shadow, ring, v1, e1, v2, e2, vertices, loopEnds);
             List<int> indices = new List<int>();
-            TriangulizeOutline(loopEnds, indices);
+            TriangulizeOutline(vertices, loopEnds, indices);
             Debug.Log(string.Join(' ', vertices));
             Debug.Log(string.Join(' ', loopEnds));
             /*for (int i = 0; i < loopEnds.Count; i++)
