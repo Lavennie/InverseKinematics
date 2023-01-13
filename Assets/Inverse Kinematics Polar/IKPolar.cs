@@ -5,9 +5,12 @@ using UnityEditor;
 
 public class IKPolar : MonoBehaviour
 {
-    public bool debug1 = true;
-    public bool debug2 = true;
-    public bool debug3 = true;
+    public bool debugChainBend = true;
+    public bool debugStartBendPoints = true;
+    public bool debugEndBendPoints = true;
+    public bool debugTargetLine = true;
+    public bool debugMinReach = true;
+    public bool debugMaxReach = true;
 
     public IKSegment[] segments;
     private Interval[] startAngleSums; // m[k](count)/M[k](count)
@@ -28,7 +31,7 @@ public class IKPolar : MonoBehaviour
 
     private void Update()
     {
-        if (debug1)
+        if (debugChainBend)
         {
             // draw min/max bend
             Vector2 pMin = Vector2.zero;
@@ -47,25 +50,31 @@ public class IKPolar : MonoBehaviour
             }
         }
 
-        if (debug2)
+        if (debugStartBendPoints)
         {
             for (int i = 0; i < segments.Length; i++)
             {
                 Debug.DrawLine(Vector2.zero, startMinBendPoints[i], Color.magenta, 0.01f);
                 Debug.DrawLine(Vector2.zero, startMaxBendPoints[i], Color.magenta, 0.01f);
+            }
+        }
+        if (debugEndBendPoints)
+        {
+            for (int i = 0; i < segments.Length; i++)
+            {
                 Debug.DrawLine(Vector2.zero, endMinBendPoints[i], Color.red, 0.01f);
                 Debug.DrawLine(Vector2.zero, endMaxBendPoints[i], Color.red, 0.01f);
             }
         }
 
         mousePos = Camera.main.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, -Camera.main.transform.position.z));
-        float angle = Mathf.Acos(mousePos.x / mousePos.magnitude) * Mathf.Rad2Deg;
-        if (debug3)
+        float angle = Mathf.Asin(mousePos.y / mousePos.magnitude) * Mathf.Rad2Deg;
+        if (debugTargetLine)
         {
             Debug.DrawRay(Vector3.zero, mousePos, Color.yellow, 0.01f);
         }
         reach = new Vector2(MinReach(angle), MaxReach(angle));
-        Debug.DrawRay(mousePos.normalized * reach.x, mousePos.normalized * reach.y, Color.red, 0.01f);
+        Debug.DrawRay(mousePos.normalized * reach.x, mousePos.normalized * Mathf.Max(reach.y - reach.x, Mathf.Epsilon), Color.red, 0.01f);
     }
 #if UNITY_EDITOR
     private void OnGUI()
@@ -104,10 +113,10 @@ public class IKPolar : MonoBehaviour
                 Mathf.Acos(endMaxBendPoints[i].x / endMaxBendPoints[i].magnitude) * Mathf.Rad2Deg);*/
         }
         centerPoints = new Vector2[segments.Length];
-        centerPoints[0] = new Vector2(segments[0].length, 0);
-        for (int i = 1; i < segments.Length; i++)
+        centerPoints[0] = Vector2.zero;
+        for (int i = 0; i < segments.Length - 1; i++)
         {
-            centerPoints[i] = new Vector2(centerPoints[i - 1].x + segments[i].length, 0);
+            centerPoints[i + 1] = new Vector2(centerPoints[i].x + segments[i].length, 0);
         }
     }
     private Vector2 CalculateStartMinBendPoint(int k, int n) { return CalculateStartBendPoint(k, n, 0); }
@@ -145,6 +154,33 @@ public class IKPolar : MonoBehaviour
         }
         return p;
     }
+    private Vector2 FollowStartMinChain(int k) { return FollowStartChain(k, 0); }
+    private Vector2 FollowStartMaxChain(int k) { return FollowStartChain(k, 1); }
+    private Vector2 FollowStartChain(int k, int limitIndex)
+    {
+        Vector2 p = Vector2.zero;
+        float angleSum = 0;
+        for (int i = 0; i < k; i++)
+        {
+            angleSum += segments[i].angleLimit[limitIndex];
+            p += new Vector2(Mathf.Cos(angleSum * Mathf.Deg2Rad), Mathf.Sin(angleSum * Mathf.Deg2Rad)) * segments[i].length;
+        }
+        return p;
+    }
+    private Vector2 FollowEndMinChain(int k) { return FollowEndChain(k, 0); }
+    private Vector2 FollowEndMaxChain(int k) { return FollowEndChain(k, 1); }
+    private Vector2 FollowEndChain(int k, int limitIndex)
+    {
+        Vector2 p = Vector2.zero;
+        float angleSum = 0;
+        for (int i = segments.Length - k - 1; i < segments.Length; i++)
+        {
+            angleSum += segments[i].angleLimit[limitIndex];
+            p += new Vector2(Mathf.Cos(angleSum * Mathf.Deg2Rad), Mathf.Sin(angleSum * Mathf.Deg2Rad)) * segments[i].length;
+        }
+        return p;
+    }
+
 
     public bool Align(Vector3 target)
     {
@@ -157,13 +193,14 @@ public class IKPolar : MonoBehaviour
         {
             lengths[i] = segments[i].length;
         }
-        return MaxReach(angle, segments.Length - 1, lengths);
+        return MaxReach(angle, segments.Length, lengths);
     }
     private float MaxReach(float angle, int n, float[] lengths)
     {
         // to prevent infinite loops (just in case though it shouldn't happen)
-        if (n == 0) { return lengths[0]; }
-        if (startAngleSums[n - 1].Contains(angle))
+        if (n <= 0) { return 0; }
+        else if (n == 1) { return lengths[0]; }
+        if (startAngleSums[n - 2].Contains(angle))
         {
             float[] newLengths = new float[lengths.Length - 1];
             for (int i = 0; i < newLengths.Length; i++)
@@ -173,13 +210,23 @@ public class IKPolar : MonoBehaviour
             newLengths[newLengths.Length - 1] += lengths[newLengths.Length];
             return MaxReach(angle, n - 1, newLengths);
         }
-        else if (new Interval(startAngleSums[n].min, startAngleSums[n - 1].min).Contains(angle))
+        else if (new Interval(startAngleSums[n - 1].min, startAngleSums[n - 2].min).Contains(angle))
         {
-            return IntersectionLineCircle(angle, startMinBendPoints[n - 1], segments[n].length).magnitude;
+            Vector3 center = FollowStartMinChain(n - 1);
+            if (debugMaxReach)
+            {
+                Debug.DrawCircle(center, lengths[n - 1], 32, new Color(1.0f, 0.0f, 0.0f));
+            }
+            return IntersectionLineCircle(angle, center, lengths[n - 1]).magnitude;
         }
-        else if (new Interval(startAngleSums[n - 1].max, startAngleSums[n].max).Contains(angle))
+        else if (new Interval(startAngleSums[n - 2].max, startAngleSums[n - 1].max).Contains(angle))
         {
-            return IntersectionLineCircle(angle, startMaxBendPoints[n - 1], segments[n].length).magnitude;
+            Vector3 center = FollowStartMaxChain(n - 1);
+            if (debugMaxReach)
+            {
+                Debug.DrawCircle(center, lengths[n - 1], 32, new Color(1.0f, 0.25f, 0.0f));
+            }
+            return IntersectionLineCircle(angle, center, lengths[n - 1]).magnitude;
         }
         else
         {
@@ -188,41 +235,55 @@ public class IKPolar : MonoBehaviour
     }
     public float MinReach(float angle)
     {
+        sbyte sign = 0;
         int k = 0;
-        for (int n = 0; n < segments.Length - 1; n++)
+        Interval prevInterval = new Interval(0, 0);
+        for (int n = 0; n < segments.Length; n++)
         {
-            if (new Interval(endAngleSums[n + 1].min, endAngleSums[n].min).Contains(angle))
+            if (new Interval(endAngleSums[n].min, prevInterval.min).Contains(angle))
             {
-                k = -(n + 1);
+                k = n;
+                sign = -1;
             }
-            else if (new Interval(endAngleSums[n].max, endAngleSums[n + 1].max).Contains(angle))
+            else if (new Interval(prevInterval.max, endAngleSums[n].max).Contains(angle))
             {
-                k = n + 1;
+                k = n;
+                sign = 1;
             }
+            prevInterval = endAngleSums[n];
         }
-        if (k == 0) { return float.NaN; }
+        Debug.Log(sign + " " + k);
+        if (sign == 0) { return float.NaN; }
 
-        if (k < 0)
+        if (sign < 0)
         {
             Vector2 p = Vector2.zero;
             float angleSum = 0;
-            for (int i = segments.Length - (-k); i < segments.Length; i++)
+            for (int i = segments.Length - k - 1; i < segments.Length; i++)
             {
                 angleSum += segments[i].angleLimit[0];
                 p += new Vector2(Mathf.Cos(angleSum * Mathf.Deg2Rad), Mathf.Sin(angleSum * Mathf.Deg2Rad)) * segments[i].length;
             }
-            return IntersectionLineCircle(angle, centerPoints[segments.Length - k + 1], p.magnitude).magnitude;
+            if (debugMinReach)
+            {
+                Debug.DrawCircle(centerPoints[segments.Length - k - 1], p.magnitude, 32, new Color(0.0f, 0.0f, 0.1f));
+            }
+            return IntersectionLineCircle(angle, centerPoints[segments.Length - k - 1], p.magnitude).magnitude;
         }
         else
         {
             Vector2 p = Vector2.zero;
             float angleSum = 0;
-            for (int i = segments.Length - k; i < segments.Length; i++)
+            for (int i = segments.Length - k - 1; i < segments.Length; i++)
             {
                 angleSum += segments[i].angleLimit[1];
                 p += new Vector2(Mathf.Cos(angleSum * Mathf.Deg2Rad), Mathf.Sin(angleSum * Mathf.Deg2Rad)) * segments[i].length;
             }
-            return IntersectionLineCircle(angle, centerPoints[segments.Length - k], p.magnitude).magnitude;
+            if (debugMinReach)
+            {
+                Debug.DrawCircle(centerPoints[segments.Length - k - 1], p.magnitude, 32, new Color(0.0f, 0.75f, 0.1f));
+            }
+            return IntersectionLineCircle(angle, centerPoints[segments.Length - k - 1], p.magnitude).magnitude;
         }
     }
 
