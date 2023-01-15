@@ -8,7 +8,7 @@ namespace InverseKinematicsMesh
     {
         const float DEBUG_TIME = 2;
 
-        public Camera camera;
+        new public Camera camera;
         public Material shadowMat;
         public Material ringMat;
         public Material intersectMat;

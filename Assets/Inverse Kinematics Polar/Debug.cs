@@ -4,6 +4,10 @@ public class Debug : UnityEngine.Debug
 {
     public static void DrawCircle(Vector3 position, float radius, int segments, Color color)
     {
+        DrawCircle(position, radius, segments, color, 0);
+    }
+    public static void DrawCircle(Vector3 position, float radius, int segments, Color color, float duration)
+    {
         // If either radius or number of segments are less or equal to 0, skip drawing
         if (radius <= 0.0f || segments <= 0)
         {
@@ -41,10 +45,18 @@ public class Debug : UnityEngine.Debug
             lineEnd += position;
 
             // Points are connected using DrawLine method and using the passed color
-            DrawLine(lineStart, lineEnd, color);
+            DrawLine(lineStart, lineEnd, color, duration);
         }
 
-        DrawLine(position - new Vector3(radius / 10, 0, 0), position + new Vector3(radius / 10, 0, 0), color);
-        DrawLine(position - new Vector3(0, radius / 10, 0), position + new Vector3(0, radius / 10, 0), color);
+        DrawLine(position - new Vector3(radius / 10, 0, 0), position + new Vector3(radius / 10, 0, 0), color, duration);
+        DrawLine(position - new Vector3(0, radius / 10, 0), position + new Vector3(0, radius / 10, 0), color, duration);
+    }
+    public static void DrawAngle(Vector3 position, float angle, float radius, Color color)
+    {
+        DrawRay(position, new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad)) * radius, color);
+    }
+    public static void DrawAngle(Vector3 position, float angle, float radius, Color color, float duration)
+    {
+        DrawRay(position, new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad)) * radius, color, duration);
     }
 }
