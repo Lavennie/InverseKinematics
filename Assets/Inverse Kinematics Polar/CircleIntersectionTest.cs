@@ -12,6 +12,6 @@ public class CircleIntersectionTest : MonoBehaviour
         Debug.DrawCircle(circle1.position, r1, 128, Color.red);
         Debug.DrawCircle(circle2.position, r2, 128, Color.green);
 
-        Debug.DrawLine(transform.position, IKPolar.TwoCircleIntersection(circle1.position, circle2.position, r1, r2), Color.blue);
+        Debug.DrawLine(transform.position, IKUtility.TwoCircleIntersection(circle1.position, circle2.position, r1, r2), Color.blue);
     }
 }
