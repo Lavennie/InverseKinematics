@@ -45,6 +45,17 @@ public static class IKUtility
         }
         return p;
     }
+    public static Vector2 FollowChain(IKSegment[] segments, IntervalSide limitIndex, int fromK, int toK)
+    {
+        float angleSum = 0;
+        Vector2 p = Vector2.zero;
+        for (int i = fromK; i < toK; i++)
+        {
+            angleSum += segments[i].angleLimit[(int)limitIndex];
+            p += ToVector(angleSum, segments[i].length);
+        }
+        return p;
+    }
 
     public static Vector2 TwoCircleIntersection(Vector2 c1, Vector2 c2, float r1, float r2)
     {
@@ -133,7 +144,7 @@ public class IKPolar : MonoBehaviour
             Debug.DrawRay(Vector3.zero, mousePos, Color.yellow, 0.01f);
         }
 
-        //Align(mousePos);
+        Align(mousePos, segments.Length);
     }
 #if UNITY_EDITOR
     private void OnGUI()
@@ -165,9 +176,10 @@ public class IKPolar : MonoBehaviour
         radius = Interval.ClampTo(radius, data[0].Get(segments, angle));
         return radius * new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad));
     }
-    public bool Align(Vector3 target)
+    public void Align(Vector3 target, int n)
     {
-        return false;
+        Debug.DrawCircle(target, segments[n - 1].length + segments[n - 2].length, 128, Color.red);
+        Debug.DrawCircle(target, Mathf.Min(IKUtility.FollowChain(segments, IntervalSide.Min, n - 2, n).magnitude, IKUtility.FollowChain(segments, IntervalSide.Max, n - 2, n).magnitude), 128, Color.green);
     }
 }
 
@@ -206,10 +218,6 @@ public class MinReachData
             this.regions = new MinReachRegion[1] { new MinReachRegion(0, 1, 0) };
             return;
         }
-
-        float angleSum;
-        List<float> angles = new List<float>();
-        List<MinReachRegion> regions = new List<MinReachRegion>();
         // [0]: shorter bend side
         // [1]: longer bend side
         int shorterIndex = 0;
@@ -234,6 +242,21 @@ public class MinReachData
             shorterIndex = 1;
         }
 
+        if (n == 2)
+        {
+            this.angles = new float[3] 
+            {
+                IKUtility.ToAngle(IKUtility.FollowChain(segments, 2, 1, (IntervalSide)shorterIndex)),
+                IKUtility.ToAngle(MixedFollowChain(segments, 2, 1, (shorterIndex + 1) % 2)), 
+                IKUtility.ToAngle(IKUtility.FollowChain(segments, 2, 1, (IntervalSide)((shorterIndex + 1) % 2)))
+            };
+            this.regions = new MinReachRegion[2] { new MinReachRegion((shorterIndex + 1) % 2, shorterIndex, 0), new MinReachRegion((shorterIndex + 1) % 2, shorterIndex, 1) };
+            return;
+        }
+
+        List<float> angles = new List<float>();
+        List<MinReachRegion> regions = new List<MinReachRegion>();
+
         // add angle to full bend on shorter side
         angles.Add(IKUtility.ToAngle(bendPoints[shorterIndex]));
         //regions.Add(new MinReachInterval(shorterIndex, 0));
@@ -246,21 +269,9 @@ public class MinReachData
         {
             int activeSide = shorterIndex;
             int inactiveSide = (shorterIndex + 1) % 2;
-            int activeK = k[activeSide];
 
             // calculate the bend position (Forward Kinematics)
-            angleSum = 0;
-            Vector2 reverseBend = Vector2.zero;
-            for (int i = 0; i < activeK; i++)
-            {
-                angleSum += segments[i].angleLimit[inactiveSide];
-                reverseBend += IKUtility.ToVector(angleSum, segments[i].length);
-            }
-            for (int i = activeK; i < n; i++)
-            {
-                angleSum += segments[i].angleLimit[activeSide];
-                reverseBend += IKUtility.ToVector(angleSum, segments[i].length);
-            }
+            Vector2 reverseBend = MixedFollowChain(segments, n, k[activeSide], inactiveSide);
 
             // update bend history
             prevBends[activeSide] = lastBends[activeSide];
@@ -272,7 +283,7 @@ public class MinReachData
             float activeLength = lastBends[activeSide].magnitude;
             float inactiveLength = lastBends[inactiveSide].magnitude;
 
-            if (activeLength > inactiveLength)
+            if (activeLength >= inactiveLength)
             {
                 break;
             }
@@ -280,7 +291,7 @@ public class MinReachData
             else
             {
                 angles.Add(activeInterval[inactiveSide]);
-                regions.Add(new MinReachRegion(inactiveSide, activeSide, activeK - 1));
+                regions.Add(new MinReachRegion(inactiveSide, activeSide, k[activeSide] - 1));
                 k[activeSide]++;
             }
 
@@ -297,21 +308,9 @@ public class MinReachData
         {
             int activeSide = (shorterIndex + 1) % 2;
             int inactiveSide = shorterIndex;
-            int activeK = k[activeSide];
 
             // calculate the bend position (Forward Kinematics)
-            angleSum = 0;
-            Vector2 reverseBend = Vector2.zero;
-            for (int i = 0; i < activeK; i++)
-            {
-                angleSum += segments[i].angleLimit[inactiveSide];
-                reverseBend += IKUtility.ToVector(angleSum, segments[i].length);
-            }
-            for (int i = activeK; i < n; i++)
-            {
-                angleSum += segments[i].angleLimit[activeSide];
-                reverseBend += IKUtility.ToVector(angleSum, segments[i].length);
-            }
+            Vector2 reverseBend = MixedFollowChain(segments, n, k[activeSide], inactiveSide);
 
             // update bend history
             prevBends[activeSide] = lastBends[activeSide];
@@ -322,34 +321,10 @@ public class MinReachData
 
             if (Interval.AreOverlapping(activeInterval, inactiveInterval))
             {
-                angleSum = 0;
-                Vector2 c1 = Vector2.zero;
-                for (int i = 0; i < activeK; i++)
-                {
-                    angleSum += segments[i].angleLimit[inactiveSide];
-                    c1 += IKUtility.ToVector(angleSum, segments[i].length);
-                }
-                angleSum = 0;
-                Vector2 c2 = Vector2.zero;
-                for (int i = 0; i < k[inactiveSide] - 1; i++)
-                {
-                    angleSum += segments[i].angleLimit[activeSide];
-                    c2 += IKUtility.ToVector(angleSum, segments[i].length);
-                }
-                angleSum = 0;
-                Vector2 r1 = Vector2.zero;
-                for (int i = activeK; i < n; i++)
-                {
-                    angleSum += segments[i].angleLimit[activeSide];
-                    r1 += IKUtility.ToVector(angleSum, segments[i].length);
-                }
-                angleSum = 0;
-                Vector2 r2 = Vector2.zero;
-                for (int i = k[inactiveSide] - 1; i < n; i++)
-                {
-                    angleSum += segments[i].angleLimit[inactiveSide];
-                    r2 += IKUtility.ToVector(angleSum, segments[i].length);
-                }
+                Vector2 c1 = IKUtility.FollowChain(segments, k[activeSide], (IntervalSide)inactiveSide);
+                Vector2 c2 = IKUtility.FollowChain(segments, k[inactiveSide] - 1, (IntervalSide)activeSide);
+                Vector2 r1 = IKUtility.FollowChain(segments, (IntervalSide)activeSide, k[activeSide], n);
+                Vector2 r2 = IKUtility.FollowChain(segments, (IntervalSide)inactiveSide, k[inactiveSide] - 1, n);
                 //Debug.DrawCircle(c1, r1.magnitude, 128, Color.white, 10);
                 //Debug.DrawCircle(c2, r2.magnitude, 128, Color.black, 10);
                 Vector2 intersection = IKUtility.TwoCircleIntersection(c1, c2, r1.magnitude, r2.magnitude);
@@ -357,7 +332,7 @@ public class MinReachData
                 if (IKUtility.AngleInterval(prevBends[inactiveSide], lastBends[activeSide]).Contains(IKUtility.ToAngle(intersection)))
                 {
                     angles.Insert(anglesInsertIndex, IKUtility.ToAngle(lastBends[activeSide]));
-                    regions.Insert(anglesInsertIndex - 1, new MinReachRegion(inactiveSide, activeSide, activeK));
+                    regions.Insert(anglesInsertIndex - 1, new MinReachRegion(inactiveSide, activeSide, k[activeSide]));
                     angles.Insert(anglesInsertIndex, IKUtility.ToAngle(intersection));
                     regions.Insert(anglesInsertIndex - 1, new MinReachRegion(activeSide, inactiveSide, k[inactiveSide] - 1));
                 }
@@ -374,7 +349,7 @@ public class MinReachData
             else
             {
                 angles.Insert(anglesInsertIndex, activeInterval[inactiveSide]);
-                regions.Insert(anglesInsertIndex - 1, new MinReachRegion(inactiveSide, activeSide, activeK - 1));
+                regions.Insert(anglesInsertIndex - 1, new MinReachRegion(inactiveSide, activeSide, k[activeSide] - 1));
                 k[activeSide]++;
             }
 
@@ -388,6 +363,23 @@ public class MinReachData
         // save calculated values
         this.angles = angles.ToArray(); ;
         this.regions = regions.ToArray();
+    }
+
+    private Vector2 MixedFollowChain(IKSegment[] segments, int n, int k, int startSide)
+    {
+        float angleSum = 0;
+        Vector2 bend = Vector2.zero;
+        for (int i = 0; i < k; i++)
+        {
+            angleSum += segments[i].angleLimit[startSide];
+            bend += IKUtility.ToVector(angleSum, segments[i].length);
+        }
+        for (int i = k; i < n; i++)
+        {
+            angleSum += segments[i].angleLimit[(startSide + 1) % 2];
+            bend += IKUtility.ToVector(angleSum, segments[i].length);
+        }
+        return bend;
     }
 
     public float Get(IKSegment[] segments, float angle)

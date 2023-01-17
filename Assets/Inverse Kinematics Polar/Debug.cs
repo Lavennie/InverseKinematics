@@ -59,4 +59,14 @@ public class Debug : UnityEngine.Debug
     {
         DrawRay(position, new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad)) * radius, color, duration);
     }
+    public static void DrawAngleInterval(Vector3 position, Interval angleInterval, float radius, Color color)
+    {
+        DrawAngle(position, angleInterval.min, radius, color);
+        DrawAngle(position, angleInterval.max, radius, color);
+    }
+    public static void DrawAngleInterval(Vector3 position, Interval angleInterval, float radius, Color color, float duration)
+    {
+        DrawAngle(position, angleInterval.min, radius, color, duration);
+        DrawAngle(position, angleInterval.max, radius, color, duration);
+    }
 }
