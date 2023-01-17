@@ -89,8 +89,7 @@ public class IKPolar : MonoBehaviour
     public bool debugTargetLine = true;
 
     public IKSegment[] segments;
-    private MaxReachData maxData;
-    private MinReachData minData;
+    private Reach[] data;
 
     private Vector2 mousePos = Vector2.zero;
     private Vector2 reach = Vector2.zero;
@@ -126,7 +125,8 @@ public class IKPolar : MonoBehaviour
         mousePos = ClampTarget(mousePos);
 
 
-        reach = new Vector2(minData.Get(segments, angle), maxData.Get(segments, angle));
+        Interval reachInterval = data[0].Get(segments, angle);
+        reach = new Vector2(reachInterval.min, reachInterval.max);
         Debug.DrawRay(mousePos.normalized * reach.x, mousePos.normalized * Mathf.Max(reach.y - reach.x, Mathf.Epsilon), Color.red, 0.01f);
         if (debugTargetLine)
         {
@@ -147,8 +147,13 @@ public class IKPolar : MonoBehaviour
 
     public void Precalculate()
     {
-        maxData = new MaxReachData(segments, segments.Length);
-        minData = new MinReachData(segments, segments.Length);
+        data = new Reach[Mathf.CeilToInt(segments.Length / 2.0f)];
+        int i = 0;
+        for (int k = segments.Length; k > 0; k -= 2)
+        {
+            data[i] = new Reach(segments, k);
+            i++;
+        }
     }
 
     public Vector2 ClampTarget(Vector2 target)
@@ -156,8 +161,8 @@ public class IKPolar : MonoBehaviour
         float angle = IKUtility.ToAngle(target);
         float radius = target.magnitude;
 
-        angle = Interval.ClampTo(angle, maxData.ValidInterval);
-        radius = Mathf.Clamp(radius, minData.Get(segments, angle), maxData.Get(segments, angle));
+        angle = Interval.ClampTo(angle, data[0].ValidInterval);
+        radius = Interval.ClampTo(radius, data[0].Get(segments, angle));
         return radius * new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad));
     }
     public bool Align(Vector3 target)
@@ -169,7 +174,20 @@ public class IKPolar : MonoBehaviour
 [System.Serializable]
 public class Reach
 {
-    public MinReachData minReachData;
+    private MinReachData minData;
+    private MaxReachData maxData;
+
+    public Reach(IKSegment[] segments, int n)
+    {
+        minData = new MinReachData(segments, n);
+        maxData = new MaxReachData(segments, n);
+    }
+
+    public Interval Get(IKSegment[] segments, float angle)
+    {
+        return new Interval(minData.Get(segments, angle), maxData.Get(segments, angle));
+    }
+    public Interval ValidInterval { get { return maxData.ValidInterval; } }
 }
 [System.Serializable]
 public class MinReachData
@@ -181,6 +199,13 @@ public class MinReachData
     public MinReachData(IKSegment[] segments, int n)
     {
         this.n = n;
+
+        if (n == 1)
+        {
+            this.angles = new float[2] { segments[0].angleLimit.min, segments[0].angleLimit.max };
+            this.regions = new MinReachRegion[1] { new MinReachRegion(0, 1, 0) };
+            return;
+        }
 
         float angleSum;
         List<float> angles = new List<float>();
@@ -402,7 +427,7 @@ public class MaxReachData
     public MaxReachData(IKSegment[] segments, int n)
     {
         angleSums = new Interval[n];
-        for (int i = 0; i < segments.Length; i++)
+        for (int i = 0; i < n; i++)
         {
             angleSums[i] = IKUtility.AngleInterval(
                 IKUtility.FollowChain(segments, i, n, IntervalSide.Min), 
@@ -503,7 +528,7 @@ public struct Interval
     public static bool AreOverlapping(Interval i1, Interval i2)
     {
         // one end of i2 is inside i1
-        return i1.min < i2.min && i2.min < i1.max || i1.min < i2.max && i2.max < i1.max;
+        return i1.min == i2.min && i1.max == i2.max || i1.min < i2.min && i2.min < i1.max || i1.min < i2.max && i2.max < i1.max;
     }
     public static float ClampTo(float value, Interval interval)
     {
