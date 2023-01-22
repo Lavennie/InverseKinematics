@@ -1,6 +1,9 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
+using Unity.VisualScripting;
+using Unity.VisualScripting.FullSerializer;
+using System;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -57,11 +60,19 @@ public static class IKUtility
         return p;
     }
 
-    public static Vector2 TwoCircleIntersection(Vector2 c1, Vector2 c2, float r1, float r2)
+    public static CircleIntersection TwoCircleIntersection(Circle c1, Circle c2)
+    {
+        return TwoCircleIntersection(c1.center, c2.center, c1.radius, c2.radius);
+    }
+    public static CircleIntersection TwoCircleIntersection(Circle c1, Vector2 c2, float r2)
+    {
+        return TwoCircleIntersection(c1.center, c2, c1.radius, r2);
+    }
+    public static CircleIntersection TwoCircleIntersection(Vector2 c1, Vector2 c2, float r1, float r2)
     {
         if (Vector2.Distance(c1, c2) > r1 + r2)
         {
-            return new Vector2(float.NaN, float.NaN);
+            return CircleIntersection.Miss;
         }
         if (c1.y != c2.y)
         {
@@ -75,10 +86,10 @@ public static class IKUtility
             float x2 = ((c1.x + k * c1.y - k * a) - Mathf.Sqrt(d)) / (k * k + 1);
             float y1 = k * x1 + a;
             float y2 = k * x2 + a;
-            return new Vector2(x1, y1);
+            return new CircleIntersection(x1, y1, x2, y2);
         }
         // TODO: when line is vertical (c1.y == c2.y)
-        return new Vector2(float.NaN, float.NaN);
+        return CircleIntersection.Miss;
     }
     public static Vector2 IntersectionLineCircle(float angle, Vector2 center, float radius)
     {
@@ -144,7 +155,7 @@ public class IKPolar : MonoBehaviour
             Debug.DrawRay(Vector3.zero, mousePos, Color.yellow, 0.01f);
         }
 
-        Align(mousePos, segments.Length);
+        Align(mousePos, 135, segments.Length);
     }
 #if UNITY_EDITOR
     private void OnGUI()
@@ -156,7 +167,7 @@ public class IKPolar : MonoBehaviour
     }
 #endif
 
-    public void Precalculate()
+    private void Precalculate()
     {
         data = new Reach[Mathf.CeilToInt(segments.Length / 2.0f)];
         int i = 0;
@@ -167,7 +178,7 @@ public class IKPolar : MonoBehaviour
         }
     }
 
-    public Vector2 ClampTarget(Vector2 target)
+    private Vector2 ClampTarget(Vector2 target)
     {
         float angle = IKUtility.ToAngle(target);
         float radius = target.magnitude;
@@ -176,10 +187,32 @@ public class IKPolar : MonoBehaviour
         radius = Interval.ClampTo(radius, data[0].Get(segments, angle));
         return radius * new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad));
     }
-    public void Align(Vector3 target, int n)
+    public void Align(Vector2 target, float angle, int n)
     {
-        Debug.DrawCircle(target, segments[n - 1].length + segments[n - 2].length, 128, Color.red);
-        Debug.DrawCircle(target, Mathf.Min(IKUtility.FollowChain(segments, IntervalSide.Min, n - 2, n).magnitude, IKUtility.FollowChain(segments, IntervalSide.Max, n - 2, n).magnitude), 128, Color.green);
+        Vector3 angleEnd = target + IKUtility.ToVector(angle, segments[n - 1].length);
+        Debug.DrawLine(target, angleEnd, Color.blue);
+        Debug.DrawAngleInterval(angleEnd, angle + segments[n - 1].angleLimit, segments[n - 2].length, Color.blue);
+
+        Circle minCircle = new Circle(target, segments[n - 1].length + segments[n - 2].length);
+        Circle maxCircle = new Circle(target, Mathf.Min(IKUtility.FollowChain(segments, IntervalSide.Min, n - 2, n).magnitude, IKUtility.FollowChain(segments, IntervalSide.Max, n - 2, n).magnitude));
+        Debug.DrawCircle(minCircle, 128, Color.green);
+        Debug.DrawCircle(maxCircle, 128, Color.red);
+
+
+        Reach reach = GetData(n - 2);
+
+        foreach (var circle in reach.GetMaxCircles(segments))
+        {
+            Debug.DrawCircle(circle, 64, Color.yellow);
+            Debug.DrawPoint(IKUtility.TwoCircleIntersection(circle, minCircle), Color.green);
+            Debug.DrawPoint(IKUtility.TwoCircleIntersection(circle, maxCircle), Color.red);
+        }
+    }
+
+    private Reach GetData(int n)
+    {
+        print(Mathf.FloorToInt((segments.Length - n) / 2.0f));
+        return data[Mathf.FloorToInt((segments.Length - n) / 2.0f)];
     }
 }
 
@@ -193,6 +226,14 @@ public class Reach
     {
         minData = new MinReachData(segments, n);
         maxData = new MaxReachData(segments, n);
+    }
+
+    public IEnumerable<Circle> GetMaxCircles(IKSegment[] segments)
+    {
+        for (int i = 0; i < maxData.CircleCount; i++)
+        {
+            yield return maxData.GetCircle(segments, i);
+        }
     }
 
     public Interval Get(IKSegment[] segments, float angle)
@@ -414,6 +455,7 @@ public class MinReachData
 [System.Serializable]
 public class MaxReachData
 {
+    // from center angle interval those more outside
     private Interval[] angleSums;
 
     public MaxReachData(IKSegment[] segments, int n)
@@ -465,6 +507,16 @@ public class MaxReachData
         }
     }
 
+    public Circle GetCircle(IKSegment[] segments, int i)
+    {
+        int side = (i < angleSums.Length) ? 0 : 1;
+        int index = Mathf.Abs(i - angleSums.Length + 1);
+        Vector2 center = IKUtility.FollowChain(segments, index, index, (IntervalSide)side);
+        float radius = IKUtility.FollowChain(segments, index, angleSums.Length, (IntervalSide)side).magnitude;
+        return new Circle(center, radius);
+    }
+
+    public int CircleCount { get { return angleSums.Length * 2 - 1; } }
     public Interval ValidInterval { get { return angleSums[angleSums.Length - 1]; } }
 }
 [System.Serializable]
@@ -537,5 +589,65 @@ public struct Interval
         return $"[{min}, {max}]";
     }
 
+    public static Interval operator+ (Interval i, float a)
+    {
+        return new Interval(i.min + a, i.max + a);
+    }
+    public static Interval operator +(float a, Interval i)
+    {
+        return new Interval(i.min + a, i.max + a);
+    }
+
     public float this[int i] { get { return (i % 2 == 0) ? min : max; } }
+}
+public struct Circle
+{
+    public Vector2 center;
+    public float radius;
+
+    public Circle(Vector2 center, float radius)
+    {
+        this.center = center;
+        this.radius = radius;
+    }
+}
+public struct CircleIntersection
+{
+    public enum Variant { Miss, Touching, Intersect, Covering }
+
+    public Vector2 p1, p2;
+
+    public CircleIntersection(float x1, float y1, float x2, float y2) : this(new Vector2(x1, y1), new Vector2(x2, y2)) { }
+    public CircleIntersection(Vector2 p1, Vector2 p2)
+    {
+        this.p1 = p1;
+        this.p2 = p2;
+    }
+
+    public Variant Type
+    {
+        get
+        {
+            if (float.IsNaN(p2.x))
+            {
+                if (float.IsNaN(p1.x))
+                {
+                    return Variant.Miss;
+                }
+                else
+                {
+                    return Variant.Touching;
+                }
+            }
+            else if (float.IsInfinity(p1.x))
+            {
+                return Variant.Covering;
+            }
+            else
+            {
+                return Variant.Touching;
+            }
+        }
+    }
+    public static CircleIntersection Miss { get { return new Circle(float.NaN, float.NaN, float.NaN, float.NaN); } }
 }

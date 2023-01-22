@@ -2,6 +2,14 @@ using UnityEngine;
 
 public class Debug : UnityEngine.Debug
 {
+    public static void DrawCircle(Circle circle, int segments, Color color)
+    {
+        DrawCircle(circle.center, circle.radius, segments, color);
+    }
+    public static void DrawCircle(Circle circle, int segments, Color color, float duration)
+    {
+        DrawCircle(circle.center, circle.radius, segments, color, duration);
+    }
     public static void DrawCircle(Vector3 position, float radius, int segments, Color color)
     {
         DrawCircle(position, radius, segments, color, 0);
@@ -48,8 +56,7 @@ public class Debug : UnityEngine.Debug
             DrawLine(lineStart, lineEnd, color, duration);
         }
 
-        DrawLine(position - new Vector3(radius / 10, 0, 0), position + new Vector3(radius / 10, 0, 0), color, duration);
-        DrawLine(position - new Vector3(0, radius / 10, 0), position + new Vector3(0, radius / 10, 0), color, duration);
+        DrawPoint(position, color, duration, radius / 10);
     }
     public static void DrawAngle(Vector3 position, float angle, float radius, Color color)
     {
@@ -68,5 +75,15 @@ public class Debug : UnityEngine.Debug
     {
         DrawAngle(position, angleInterval.min, radius, color, duration);
         DrawAngle(position, angleInterval.max, radius, color, duration);
+    }
+    public static void DrawPoint(Vector3 position, Color color, float size = 0.1f)
+    {
+        DrawLine(position - new Vector3(size, 0, 0), position + new Vector3(size, 0, 0), color);
+        DrawLine(position - new Vector3(0, size, 0), position + new Vector3(0, size, 0), color);
+    }
+    public static void DrawPoint(Vector3 position, Color color, float duration, float size = 0.1f)
+    {
+        DrawLine(position - new Vector3(size, 0, 0), position + new Vector3(size, 0, 0), color, duration);
+        DrawLine(position - new Vector3(0, size, 0), position + new Vector3(0, size, 0), color, duration);
     }
 }
