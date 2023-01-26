@@ -1,9 +1,5 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Collections;
-using Unity.VisualScripting;
-using Unity.VisualScripting.FullSerializer;
-using System;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -88,20 +84,47 @@ public static class IKUtility
             float y2 = k * x2 + a;
             return new CircleIntersection(x1, y1, x2, y2);
         }
-        // TODO: when line is vertical (c1.y == c2.y)
-        return CircleIntersection.Miss;
+        else if (c1.x != c2.x)
+        {
+            // law of cosines without acos, since it gets canceled out when used in next line
+            float d = Mathf.Abs(c1.x - c2.x);
+            if (Mathf.Abs(r1 + r2 - d) < Mathf.Epsilon)
+            {
+                return new CircleIntersection((c1.x < c2.x) ? c1.x + r1 : c1.x - r1, c1.y, float.NaN, float.NaN);
+            }
+            else if (Mathf.Abs(r1 + d - r2) < Mathf.Epsilon)
+            {
+                return new CircleIntersection((c1.x < c2.x) ? c1.x - r1 : c1.x + r1, c1.y, float.NaN, float.NaN);
+            }
+            else if (Mathf.Abs(r2 + d - r1) < Mathf.Epsilon)
+            {
+                return new CircleIntersection((c1.x < c2.x) ? c1.x + r1 : c1.x - r1, c1.y, float.NaN, float.NaN);
+            }
+            float angle = (r1 * r1 + d * d - r2 * r2) / (2 * r1 * d);
+            float offset = r1 * angle;
+            float x = (c1.x < c2.x) ? c1.x + offset : c1.x - offset;
+            CircleIntersection intersection = IntersectionLineCircle(90, new Vector2(x - c1.x, 0), r1);
+            intersection.p1 = new Vector2(x, intersection.p1.y + c1.y);
+            intersection.p2 = new Vector2(x, intersection.p2.y + c1.y);
+            return intersection;
+            //return new CircleIntersection(new Vector2(x, c1.y), new Vector2(float.NaN, float.NaN));
+        }
+        else
+        {
+            return (r1 == r2) ? new CircleIntersection(c1.x, c1.y, r1, float.PositiveInfinity) : CircleIntersection.Miss;
+        }
     }
-    public static Vector2 IntersectionLineCircle(float angle, Vector2 center, float radius)
+    public static CircleIntersection IntersectionLineCircle(float angle, Vector2 center, float radius)
     {
         float radAngle = angle * Mathf.Deg2Rad;
         float cos = Mathf.Cos(radAngle);
         float sin = Mathf.Sin(radAngle);
-        float y;
-        y = sin * (center.y * sin + center.x * cos + Mathf.Sqrt(Mathf.Pow(center.y * sin + center.x * cos, 2) - center.x * center.x - center.y * center.y + radius * radius));
-        float x;
-        x = center.x + Mathf.Sqrt(radius * radius - (y - center.y) * (y - center.y));
+        float y1 = sin * (center.y * sin + center.x * cos + Mathf.Sqrt(Mathf.Pow(center.y * sin + center.x * cos, 2) - center.x * center.x - center.y * center.y + radius * radius));
+        float y2 = sin * (center.y * sin + center.x * cos - Mathf.Sqrt(Mathf.Pow(center.y * sin + center.x * cos, 2) - center.x * center.x - center.y * center.y + radius * radius));
+        float x1 = center.x + Mathf.Sqrt(radius * radius - (y1 - center.y) * (y1 - center.y));
+        float x2 = center.x - Mathf.Sqrt(radius * radius - (y2 - center.y) * (y2 - center.y));
 
-        return new Vector2(x, y);
+        return new CircleIntersection(x1, y1, x2, y2);
     }
 }
 
@@ -204,8 +227,8 @@ public class IKPolar : MonoBehaviour
         foreach (var circle in reach.GetMaxCircles(segments))
         {
             Debug.DrawCircle(circle, 64, Color.yellow);
-            Debug.DrawPoint(IKUtility.TwoCircleIntersection(circle, minCircle), Color.green);
-            Debug.DrawPoint(IKUtility.TwoCircleIntersection(circle, maxCircle), Color.red);
+            Debug.DrawPoints(IKUtility.TwoCircleIntersection(circle, minCircle), Color.green);
+            Debug.DrawPoints(IKUtility.TwoCircleIntersection(circle, maxCircle), Color.red);
         }
     }
 
@@ -368,13 +391,13 @@ public class MinReachData
                 Vector2 r2 = IKUtility.FollowChain(segments, (IntervalSide)inactiveSide, k[inactiveSide] - 1, n);
                 //Debug.DrawCircle(c1, r1.magnitude, 128, Color.white, 10);
                 //Debug.DrawCircle(c2, r2.magnitude, 128, Color.black, 10);
-                Vector2 intersection = IKUtility.TwoCircleIntersection(c1, c2, r1.magnitude, r2.magnitude);
+                CircleIntersection intersection = IKUtility.TwoCircleIntersection(c1, c2, r1.magnitude, r2.magnitude);
 
-                if (IKUtility.AngleInterval(prevBends[inactiveSide], lastBends[activeSide]).Contains(IKUtility.ToAngle(intersection)))
+                if (IKUtility.AngleInterval(prevBends[inactiveSide], lastBends[activeSide]).Contains(IKUtility.ToAngle(intersection.p1)))
                 {
                     angles.Insert(anglesInsertIndex, IKUtility.ToAngle(lastBends[activeSide]));
                     regions.Insert(anglesInsertIndex - 1, new MinReachRegion(inactiveSide, activeSide, k[activeSide]));
-                    angles.Insert(anglesInsertIndex, IKUtility.ToAngle(intersection));
+                    angles.Insert(anglesInsertIndex, IKUtility.ToAngle(intersection.p1));
                     regions.Insert(anglesInsertIndex - 1, new MinReachRegion(activeSide, inactiveSide, k[inactiveSide] - 1));
                 }
                 else
@@ -444,7 +467,7 @@ public class MinReachData
                     movingPart += IKUtility.ToVector(angleSum, segments[j].length);
                 }
 
-                return IKUtility.IntersectionLineCircle(angle, center, movingPart.magnitude).magnitude;
+                return IKUtility.IntersectionLineCircle(angle, center, movingPart.magnitude).p1.magnitude;
             }
         }
         return float.NaN;
@@ -495,11 +518,11 @@ public class MaxReachData
         }
         else if (new Interval(angleSums[n - 1].min, angleSums[n - 2].min).Contains(angle))
         {
-            return IKUtility.IntersectionLineCircle(angle, IKUtility.FollowChain(segments, n - 1, IntervalSide.Min), lengths[n - 1]).magnitude;
+            return IKUtility.IntersectionLineCircle(angle, IKUtility.FollowChain(segments, n - 1, IntervalSide.Min), lengths[n - 1]).p1.magnitude;
         }
         else if (new Interval(angleSums[n - 2].max, angleSums[n - 1].max).Contains(angle))
         {
-            return IKUtility.IntersectionLineCircle(angle, IKUtility.FollowChain(segments, n - 1, IntervalSide.Max), lengths[n - 1]).magnitude;
+            return IKUtility.IntersectionLineCircle(angle, IKUtility.FollowChain(segments, n - 1, IntervalSide.Max), lengths[n - 1]).p1.magnitude;
         }
         else
         {
@@ -639,15 +662,15 @@ public struct CircleIntersection
                     return Variant.Touching;
                 }
             }
-            else if (float.IsInfinity(p1.x))
+            else if (float.IsInfinity(p2.y))
             {
                 return Variant.Covering;
             }
             else
             {
-                return Variant.Touching;
+                return Variant.Intersect;
             }
         }
     }
-    public static CircleIntersection Miss { get { return new Circle(float.NaN, float.NaN, float.NaN, float.NaN); } }
+    public static CircleIntersection Miss { get { return new CircleIntersection(float.NaN, float.NaN, float.NaN, float.NaN); } }
 }

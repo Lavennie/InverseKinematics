@@ -86,4 +86,31 @@ public class Debug : UnityEngine.Debug
         DrawLine(position - new Vector3(size, 0, 0), position + new Vector3(size, 0, 0), color, duration);
         DrawLine(position - new Vector3(0, size, 0), position + new Vector3(0, size, 0), color, duration);
     }
+    public static void DrawPoints(CircleIntersection intersection, Color color, float size = 0.1f)
+    {
+        Debug.Log(intersection.Type);
+        switch (intersection.Type)
+        {
+            case CircleIntersection.Variant.Touching:
+                DrawPoint(intersection.p1, color, size);
+                break;
+            case CircleIntersection.Variant.Intersect:
+                DrawPoint(intersection.p1, color, size);
+                DrawPoint(intersection.p2, color, size);
+                break;
+        }
+    }
+    public static void DrawPoints(CircleIntersection intersection, Color color, float duration, float size = 0.1f)
+    {
+        switch (intersection.Type)
+        {
+            case CircleIntersection.Variant.Touching:
+                DrawPoint(intersection.p1, color, duration, size);
+                break;
+            case CircleIntersection.Variant.Intersect:
+                DrawPoint(intersection.p1, color, duration, size);
+                DrawPoint(intersection.p2, color, duration, size);
+                break;
+        }
+    }
 }
