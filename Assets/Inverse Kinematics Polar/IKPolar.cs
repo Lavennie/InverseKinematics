@@ -66,7 +66,7 @@ public static class IKUtility
     }
     public static CircleIntersection TwoCircleIntersection(Vector2 c1, Vector2 c2, float r1, float r2)
     {
-        if (Vector2.Distance(c1, c2) > r1 + r2)
+        if (Vector2.Distance(c1, c2) > r1 + r2 + 2 * Mathf.Epsilon)
         {
             return CircleIntersection.Miss;
         }
@@ -212,29 +212,75 @@ public class IKPolar : MonoBehaviour
     }
     public void Align(Vector2 target, float angle, int n)
     {
+        print(n);
+        if (n == 1)
+        {
+            Debug.DrawLine(transform.position, target, Color.cyan);
+            return;
+        }
+        else if (n == 2)
+        {
+            return;
+        }
+
         Vector3 angleEnd = target + IKUtility.ToVector(angle, segments[n - 1].length);
         Debug.DrawLine(target, angleEnd, Color.blue);
         Debug.DrawAngleInterval(angleEnd, angle + segments[n - 1].angleLimit, segments[n - 2].length, Color.blue);
 
-        Circle minCircle = new Circle(target, segments[n - 1].length + segments[n - 2].length);
-        Circle maxCircle = new Circle(target, Mathf.Min(IKUtility.FollowChain(segments, IntervalSide.Min, n - 2, n).magnitude, IKUtility.FollowChain(segments, IntervalSide.Max, n - 2, n).magnitude));
+        Circle minCircle = new Circle(target, Mathf.Min(IKUtility.FollowChain(segments, IntervalSide.Min, n - 2, n).magnitude, IKUtility.FollowChain(segments, IntervalSide.Max, n - 2, n).magnitude));
+        Circle maxCircle = new Circle(target, segments[n - 1].length + segments[n - 2].length);
         Debug.DrawCircle(minCircle, 128, Color.green);
         Debug.DrawCircle(maxCircle, 128, Color.red);
 
 
         Reach reach = GetData(n - 2);
-
-        foreach (var circle in reach.GetMaxCircles(segments))
+        foreach (var circleInterval in reach.GetMaxCircles(segments))
         {
+            Circle circle = circleInterval.Key;
             Debug.DrawCircle(circle, 64, Color.yellow);
-            Debug.DrawPoints(IKUtility.TwoCircleIntersection(circle, minCircle), Color.green);
-            Debug.DrawPoints(IKUtility.TwoCircleIntersection(circle, maxCircle), Color.red);
+            CircleIntersection minInter = IKUtility.TwoCircleIntersection(circle, minCircle);
+            CircleIntersection maxInter = IKUtility.TwoCircleIntersection(circle, maxCircle);
+
+            if (maxInter.Type == CircleIntersection.Variant.Miss)
+            {
+                maxInter.p1 = (target - circle.center).normalized * circle.radius;
+            }
+            Debug.DrawPoints(minInter, Color.green);
+            Debug.DrawPoints(maxInter, Color.red);
+
+            Vector2 newTarget;
+            // pick new target for smaller chain, depending on valid region type
+            if (minInter.Type == CircleIntersection.Variant.Intersect)
+            {
+                // two intervals
+                Debug.DrawAngleInterval(circle.center, new Interval(IKUtility.ToAngle(maxInter.p1), IKUtility.ToAngle(minInter.p1)), 10, Color.red);
+                Debug.DrawAngleInterval(circle.center, new Interval(IKUtility.ToAngle(maxInter.p2), IKUtility.ToAngle(minInter.p2)), 10, Color.green);
+            }
+            else
+            {
+                if (maxInter.Type == CircleIntersection.Variant.Intersect)
+                {
+                    // single interval
+                    Interval interval = new Interval(IKUtility.ToAngle(maxInter.p1), IKUtility.ToAngle(maxInter.p2));
+                    interval = Interval.Overlap(interval, circleInterval.Value);
+                    float newAngle = interval.RandomInside();
+                    Interval reachRange = reach.Get(segments, newAngle);
+                    newTarget = IKUtility.ToVector(newAngle, reachRange.max);
+                    Debug.DrawPoint(newTarget, Color.red);
+                    Align(newTarget, float.NaN, n - 2);
+                }
+                else
+                {
+                    // point
+                    Debug.DrawAngle(circle.center, IKUtility.ToAngle(maxInter.p1), 10, Color.red);
+                    newTarget = maxInter.p1;
+                }
+            }
         }
     }
 
     private Reach GetData(int n)
     {
-        print(Mathf.FloorToInt((segments.Length - n) / 2.0f));
         return data[Mathf.FloorToInt((segments.Length - n) / 2.0f)];
     }
 }
@@ -251,11 +297,11 @@ public class Reach
         maxData = new MaxReachData(segments, n);
     }
 
-    public IEnumerable<Circle> GetMaxCircles(IKSegment[] segments)
+    public IEnumerable<KeyValuePair<Circle, Interval>> GetMaxCircles(IKSegment[] segments)
     {
         for (int i = 0; i < maxData.CircleCount; i++)
         {
-            yield return maxData.GetCircle(segments, i);
+            yield return new KeyValuePair<Circle, Interval>(maxData.GetCircle(segments, i), maxData.GetCircleInterval(segments, i));
         }
     }
 
@@ -533,10 +579,15 @@ public class MaxReachData
     public Circle GetCircle(IKSegment[] segments, int i)
     {
         int side = (i < angleSums.Length) ? 0 : 1;
-        int index = Mathf.Abs(i - angleSums.Length + 1);
+        int index = Mathf.Abs(i - angleSums.Length + 1); // from ... -2, -1, 0, 1, 2, ... to actual segment index
         Vector2 center = IKUtility.FollowChain(segments, index, index, (IntervalSide)side);
         float radius = IKUtility.FollowChain(segments, index, angleSums.Length, (IntervalSide)side).magnitude;
         return new Circle(center, radius);
+    }
+    public Interval GetCircleInterval(IKSegment[] segments, int i)
+    {
+        // TODO: convert to correct index of angleSum
+        return angleSums[0];
     }
 
     public int CircleCount { get { return angleSums.Length * 2 - 1; } }
@@ -595,16 +646,40 @@ public struct Interval
     public static bool AreOverlapping(Interval i1, Interval i2)
     {
         // one end of i2 is inside i1
-        return i1.min == i2.min && i1.max == i2.max || i1.min < i2.min && i2.min < i1.max || i1.min < i2.max && i2.max < i1.max;
+        return !Overlap(i1, i2).IsEmpty();
+        //return i1.min == i2.min && i1.max == i2.max || i1.min < i2.min && i2.min < i1.max || i1.min < i2.max && i2.max < i1.max;
     }
     public static float ClampTo(float value, Interval interval)
     {
         return Mathf.Clamp(value, interval.min, interval.max);
     }
+    public static Interval Overlap(Interval i1, Interval i2)
+    {
+        if (i1.min == i2.min && i1.max == i2.max)
+        {
+            return i1;
+        }
+        else if (i2.max < i1.min || i1.max < i2.min)
+        {
+            return Interval.Empty;
+        }
+        else
+        {
+            return new Interval(Mathf.Max(i1.min, i2.min), Mathf.Min(i1.max, i2.max));
+        }
+    }
 
+    public bool IsEmpty()
+    {
+        return float.IsNaN(min) && float.IsNaN(max);
+    }
     public bool Contains(float angle)
     {
         return min <= angle && angle <= max;
+    }
+    public float RandomInside()
+    {
+        return Random.Range(min, max);
     }
 
     public override string ToString()
@@ -621,6 +696,7 @@ public struct Interval
         return new Interval(i.min + a, i.max + a);
     }
 
+    public static Interval Empty { get { return new Interval(float.NaN, float.NaN); } }
     public float this[int i] { get { return (i % 2 == 0) ? min : max; } }
 }
 public struct Circle

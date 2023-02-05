@@ -88,7 +88,6 @@ public class Debug : UnityEngine.Debug
     }
     public static void DrawPoints(CircleIntersection intersection, Color color, float size = 0.1f)
     {
-        Debug.Log(intersection.Type);
         switch (intersection.Type)
         {
             case CircleIntersection.Variant.Touching:
