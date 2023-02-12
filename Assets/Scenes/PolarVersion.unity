@@ -3534,23 +3534,34 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   debugChainBend: 1
-  debugTargetLine: 1
-  targetAngle: 0.5
-  targetRadius: 0.5
+  debugTargetLine: 0
   target: {fileID: 96448383}
   segments:
   - length: 2
     angleLimit:
       min: -10
       max: 10
+    targetAngle: 0.5
   - length: 1
     angleLimit:
       min: -40
       max: 5
+    targetAngle: 0.5
   - length: 1.5
     angleLimit:
       min: -5
       max: 30
+    targetAngle: 0.5
+  - length: 1
+    angleLimit:
+      min: -10
+      max: 7
+    targetAngle: 0.5
+  - length: 2
+    angleLimit:
+      min: -20
+      max: 23
+    targetAngle: 0.5
 --- !u!4 &1538191420
 Transform:
   m_ObjectHideFlags: 0

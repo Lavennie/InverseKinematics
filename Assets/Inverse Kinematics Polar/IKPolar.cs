@@ -132,7 +132,6 @@ public class IKPolar : MonoBehaviour
 {
     public bool debugChainBend = true;
     public bool debugTargetLine = true;
-    [Range(0, 1)] public float targetAngle = 0.5f;
     public Transform target;
 
     public IKSegment[] segments;
@@ -148,7 +147,13 @@ public class IKPolar : MonoBehaviour
 
     private void Update()
     {
-        targetAngle = (Mathf.Sin(Time.time) + 1) / 2;
+        for (int i = 0; i < segments.Length; i++)
+        {
+            if (segments[i].animateTargetAngle)
+            {
+                segments[i].targetAngle = (Mathf.Sin(Time.time) + 1) / 2;
+            }
+        }
 
         if (debugChainBend)
         {
@@ -189,7 +194,8 @@ public class IKPolar : MonoBehaviour
             Debug.DrawRay(Vector3.zero, mousePos, Color.yellow, 0.01f);
         }
 
-        Align(mousePos, 135, segments.Length);
+        Debug.DrawReach(data[0], segments, Color.green);
+        Align(mousePos, -45, segments.Length);
     }
 #if UNITY_EDITOR
     private void OnGUI()
@@ -233,7 +239,7 @@ public class IKPolar : MonoBehaviour
             float a = segments[0].length;
             float b = target.magnitude;
             float c = segments[1].length;
-            float addAngle = Mathf.Acos((a * a + b * b - c * c) / (2 * a * b)) * Mathf.Rad2Deg;
+            float addAngle = Mathf.Acos(Mathf.Clamp((a * a + b * b - c * c) / (2 * a * b), -1, 1)) * Mathf.Rad2Deg;
             Vector2 p;
             Vector2 dir;
             p = IKUtility.ToVector(IKUtility.ToAngle(target) + addAngle, segments[0].length);
@@ -273,11 +279,10 @@ public class IKPolar : MonoBehaviour
             return;
         }
 
-        Vector3 angleEnd = target + IKUtility.ToVector(angle, segments[n - 1].length);
         Circle targetCircle = new Circle(target, segments[n - 1].length);
 
         Debug.DrawCircle(targetCircle, 64, Color.magenta);
-        Debug.DrawLine(target, angleEnd, Color.magenta);
+        Debug.DrawLine(target, target + IKUtility.ToVector(angle, segments[n - 1].length) / 2, Color.magenta);
 
         Reach reach = GetData(n - 1);
         Debug.DrawReach(reach, segments, Color.green);
@@ -369,7 +374,6 @@ public class IKPolar : MonoBehaviour
         if (maxPoints.Count == 1)
         {
             intervals.Add(new Interval(IKUtility.ToAngle(maxPoints[0]), IKUtility.ToAngle(maxPoints[0])));
-
         }
         else
         {
@@ -407,27 +411,43 @@ public class IKPolar : MonoBehaviour
             }
         }
 
-        float angleSum = 0;
-        for (int i = 0; i < intervals.Count; i++)
-        {
-            angleSum += intervals[i].max - intervals[i].min;
-        }
-        float tempAngle = Mathf.Lerp(0, 1, targetAngle);
         float newAngle = float.NaN;
-        float prevEnd = 0;
-        for (int i = 0; i < intervals.Count; i++)
+        if (intervals.Count == 1)
         {
-            Interval tempInterval = new Interval(prevEnd, prevEnd + (intervals[i].max - intervals[i].min) / angleSum);
-            prevEnd = tempInterval.max;
-
-            if (tempInterval.Contains(tempAngle))
+            newAngle = Mathf.Lerp(intervals[0].min, intervals[0].max, segments[n - 2].targetAngle);
+        }
+        else
+        {
+            float angleSum = 0;
+            for (int i = 0; i < intervals.Count; i++)
             {
-                tempAngle = (tempAngle - tempInterval.min) / (tempInterval.max - tempInterval.min);
-                newAngle = Mathf.Lerp(intervals[i].min, intervals[i].max, tempAngle);
-                break;
+                angleSum += intervals[i].max - intervals[i].min;
+            }
+            float tempAngle = Mathf.Lerp(0, 1, segments[n - 2].targetAngle);
+            float prevEnd = 0;
+            for (int i = 0; i < intervals.Count; i++)
+            {
+                Interval tempInterval = new Interval(prevEnd, prevEnd + (intervals[i].max - intervals[i].min) / angleSum);
+                if (i == intervals.Count - 1)
+                {
+                    tempInterval.max = 1.0f;
+                }
+                prevEnd = tempInterval.max;
+
+                if (tempInterval.Contains(tempAngle))
+                {
+                    tempAngle = (tempAngle - tempInterval.min) / (tempInterval.max - tempInterval.min);
+                    newAngle = Mathf.Lerp(intervals[i].min, intervals[i].max, tempAngle);
+                    break;
+                }
             }
         }
         CircleIntersection inter = IKUtility.IntersectionLineCircle(newAngle, targetCircle.center, targetCircle.radius);
+        if (inter.Type == CircleIntersection.Variant.Miss)
+        {
+            Debug.DrawCircle(targetCircle, 64, Color.cyan);
+            Debug.DrawLine(Vector3.zero, IKUtility.ToVector(newAngle, 10), Color.cyan);
+        }
         Vector2 newTarget = IKUtility.ToVector(newAngle, Mathf.Min(inter.p1.magnitude, inter.p2.magnitude));
 
         Debug.DrawLine(targetCircle.center, newTarget, Color.yellow);
@@ -815,6 +835,8 @@ public class IKSegment
 {
     public float length;
     public Interval angleLimit;
+    [Range(0, 1)] public float targetAngle = 0.5f;
+    public bool animateTargetAngle = false;
 
     public IKSegment(float length, float angleMin, float angleMax)
     {
