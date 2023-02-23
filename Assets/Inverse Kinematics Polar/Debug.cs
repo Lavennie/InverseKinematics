@@ -2,21 +2,21 @@ using UnityEngine;
 
 public class Debug : UnityEngine.Debug
 {
-    public static void DrawReach(Reach reach, IKSegment[] segments, Color color)
+    public static void DrawReach(Reach reach, IKSegment[] segments, Color color, float rotAngle = 0)
     {
-        DrawReach(reach, segments, color, 0);
+        DrawReach(reach, segments, color, 0, rotAngle);
     }
-    public static void DrawReach(Reach reach, IKSegment[] segments, Color color, float duration)
+    public static void DrawReach(Reach reach, IKSegment[] segments, Color color, float duration, float rotAngle = 0)
     {
         foreach (var circleInterval in reach.GetMaxCircles(segments))
         {
-            DrawArc(circleInterval.Key, circleInterval.Value, 64, color, duration);
+            DrawArc(circleInterval.Key, circleInterval.Value, 64, color, duration, rotAngle);
         }
         color *= 0.7f;
         color.a = 1.0f;
         foreach (var circleInterval in reach.GetMinCircles(segments))
         {
-            DrawArc(circleInterval.Key, circleInterval.Value, 64, color, duration);
+            DrawArc(circleInterval.Key, circleInterval.Value, 64, Color.green, duration, rotAngle);
         }
     }
 
@@ -51,19 +51,19 @@ public class Debug : UnityEngine.Debug
         DrawPoint(position, color, duration, radius / 10);
     }
 
-    public static void DrawArc(Circle circle, Interval angle, int segments, Color color)
+    public static void DrawArc(Circle circle, Interval angle, int segments, Color color, float rotAngle = 0)
     {
-        DrawArc(circle.center, circle.radius, angle, segments, color, 0);
+        DrawArc(circle.center, circle.radius, angle, segments, color, 0, rotAngle);
     }
-    public static void DrawArc(Circle circle, Interval angle, int segments, Color color, float duration)
+    public static void DrawArc(Circle circle, Interval angle, int segments, Color color, float duration, float rotAngle = 0)
     {
-        DrawArc(circle.center, circle.radius, angle, segments, color, duration);
+        DrawArc(circle.center, circle.radius, angle, segments, color, duration, rotAngle);
     }
-    public static void DrawArc(Vector3 center, float radius, Interval angle, int segments, Color color)
+    public static void DrawArc(Vector3 center, float radius, Interval angle, int segments, Color color, float rotAngle = 0)
     {
-        DrawArc(center, radius, angle, segments, color, 0);
+        DrawArc(center, radius, angle, segments, color, 0, rotAngle);
     }
-    public static void DrawArc(Vector3 center, float radius, Interval angle, int segments, Color color, float duration)
+    public static void DrawArc(Vector3 center, float radius, Interval angle, int segments, Color color, float duration, float rotAngle = 0)
     {
         if (radius <= 0.0f || segments <= 0) { return; }
 
@@ -75,8 +75,8 @@ public class Debug : UnityEngine.Debug
         Vector3 lineEnd;
         for (int i = 0; i < segments; i++)
         {
-            lineStart = center + new Vector3(Mathf.Cos(angle.min + angleStep * i), Mathf.Sin(angle.min + angleStep * i)) * radius;
-            lineEnd = center + new Vector3(Mathf.Cos(angle.min + angleStep * (i + 1)), Mathf.Sin(angle.min + angleStep * (i + 1))) * radius;
+            lineStart = center + Quaternion.Euler(0, 0, rotAngle) * new Vector3(Mathf.Cos(angle.min + angleStep * i), Mathf.Sin(angle.min + angleStep * i)) * radius;
+            lineEnd = center + Quaternion.Euler(0, 0, rotAngle) * new Vector3(Mathf.Cos(angle.min + angleStep * (i + 1)), Mathf.Sin(angle.min + angleStep * (i + 1))) * radius;
 
             DrawLine(lineStart, lineEnd, color, duration);
         }
