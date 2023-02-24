@@ -684,16 +684,20 @@ public class MinReachData
         // start bending to other side starting with shorter side
         int activeIndex = 0;
         int inactiveIndex = 1;
+        IntervalSide activeSide;
+        IntervalSide inactiveSide;
         while (true)
         {
             bool exit = false;
             // radius of above interval at end point that is more bent
-            float activeLength;
-            float inactiveLength;
+            float activeMaxLength;
+            float inactiveMaxLength;
+            Interval activeInterval;
+            Interval inactiveInterval;
             do
             {
-                IntervalSide activeSide = (activeIndex == 0) ? (IntervalSide)shorterIndex : (IntervalSide)((shorterIndex + 1) % 2);
-                IntervalSide inactiveSide = (activeSide == IntervalSide.Min) ? IntervalSide.Max : IntervalSide.Min;
+                activeSide = (activeIndex == 0) ? (IntervalSide)shorterIndex : (IntervalSide)((shorterIndex + 1) % 2);
+                inactiveSide = (activeSide == IntervalSide.Min) ? IntervalSide.Max : IntervalSide.Min;
 
                 // calculate the bend position (Forward Kinematics)
                 IKUtility.DebugFollowChain(segments, new IndexRangeK(startN, k[activeIndex], partCount), inactiveSide, activeSide, 0);
@@ -706,48 +710,18 @@ public class MinReachData
                 prevBends[activeIndex] = lastBends[activeIndex];
                 lastBends[activeIndex] = reverseBend;
                 // arc angle interval from prevBend to lastBend
-                Interval activeInterval = IKUtility.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
-                Interval inactiveInterval = IKUtility.AngleInterval(prevBends[inactiveIndex], lastBends[inactiveIndex]);
+                activeInterval = IKUtility.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
+                inactiveInterval = IKUtility.AngleInterval(prevBends[inactiveIndex], lastBends[inactiveIndex]);
 
-                //Debug.DrawAngleInterval(debugCenter, activeInterval, debugRadius, Color.white, 10);
-                //Debug.DrawAngleInterval(debugCenter, inactiveInterval, debugRadius, Color.black, 10);
-                if (Interval.AreOverlapping(activeInterval, inactiveInterval))
-                {
-                    Vector2 c1 = IKUtility.FollowChain(segments, new IndexRange(startN, k[activeIndex]), inactiveSide);
-                    Vector2 c2 = IKUtility.FollowChain(segments, new IndexRange(startN, k[inactiveIndex] - 1), activeSide);
-                    Vector2 r1 = IKUtility.FollowChain(segments, new IndexRange(k[activeIndex], partCount), activeSide);
-                    Vector2 r2 = IKUtility.FollowChain(segments, new IndexRange(k[inactiveIndex] - 1, partCount), inactiveSide);
-                    //Debug.DrawCircle(c1, r1.magnitude, 128, Color.white, 10);
-                    //Debug.DrawCircle(c2, r2.magnitude, 128, Color.black, 10);
-                    CircleIntersection intersection = IKUtility.TwoCircleIntersection(c1, c2, r1.magnitude, r2.magnitude);
 
-                    if (IKUtility.AngleInterval(prevBends[inactiveIndex], lastBends[activeIndex]).Contains(IKUtility.ToAngle(intersection.p1)))
-                    {
-                        angles[activeIndex].Insert(insertI[activeIndex], IKUtility.ToAngle(lastBends[activeIndex]));
-                        regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)inactiveSide, (int)activeSide, k[activeIndex]));
-                        angles[activeIndex].Insert(insertI[activeIndex], IKUtility.ToAngle(intersection.p1));
-                        regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)activeSide, (int)inactiveSide, k[inactiveIndex] - 1));
-                        insertI[activeIndex]++;
-                    }
-                    else
-                    {
-                        // TODO:
-                    }
-                    exit = true;
-                    break;
-                }
-                // continue bending the same side
-                else
-                {
-                    Debug.Log("insert " + activeIndex);
-                    angles[activeIndex].Insert(insertI[activeIndex], activeInterval[inactiveIndex]);
-                    regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)inactiveSide, (int)activeSide, k[activeIndex] - 1));
-                    insertI[activeIndex]++;
-                    k[activeIndex]++;
-                }
+                angles[activeIndex].Insert(insertI[activeIndex], activeInterval[inactiveIndex]);
+                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)inactiveSide, (int)activeSide, k[activeIndex] - 1));
+                insertI[activeIndex]++;
+                k[activeIndex]++;
 
-                activeLength = lastBends[activeIndex].magnitude;
-                inactiveLength = lastBends[inactiveIndex].magnitude;
+                // TODO: calculate correctly, now the length at max bend is calculated instead of max length reached during bending
+                activeMaxLength = lastBends[activeIndex].magnitude;
+                inactiveMaxLength = lastBends[inactiveIndex].magnitude;
 
                 // infinite loop protection while still writing this function
                 if (k[0] > 100 || k[1] > 100)
@@ -755,9 +729,15 @@ public class MinReachData
                     exit = true;
                     break;
                 }
-            } while (activeLength < inactiveLength); // not if at end activeLength < inactiveLength, but if at any time it crossed over inactiveLength
-            activeIndex = inactiveIndex; 
+            } while (activeMaxLength < inactiveMaxLength); // not if at end activeLength < inactiveLength, but if at any time it crossed over inactiveLength
+
+            activeIndex = inactiveIndex;
             inactiveIndex = (inactiveIndex + 1) % 2;
+            // bend only the new side until there is intersection, otherwise continue with normal bends on new side
+            if (Interval.AreOverlapping(activeInterval, inactiveInterval))
+            {
+                break;
+            }
 
             if (exit)
             {
@@ -765,11 +745,49 @@ public class MinReachData
             }
         }
 
+        // bend last side until there is an intersection
+        int loopGuard = 100;
+        do
+        {
+            // centers and radiuses of last bends circles on both sides
+            Vector2 c1 = IKUtility.FollowChain(segments, new IndexRange(startN, k[activeIndex]), inactiveSide);
+            Vector2 c2 = IKUtility.FollowChain(segments, new IndexRange(startN, k[inactiveIndex] - 1), activeSide);
+            Vector2 r1 = IKUtility.FollowChain(segments, new IndexRange(k[activeIndex], partCount), activeSide);
+            Vector2 r2 = IKUtility.FollowChain(segments, new IndexRange(k[inactiveIndex] - 1, partCount), inactiveSide);
+            //Debug.DrawCircle(c1, r1.magnitude, 128, Color.white, 10);
+            //Debug.DrawCircle(c2, r2.magnitude, 128, Color.black, 10);
+            CircleIntersection intersection = IKUtility.TwoCircleIntersection(c1, c2, r1.magnitude, r2.magnitude);
+
+            // there is an intersection in valid angle intervals
+            if (IKUtility.AngleInterval(prevBends[inactiveIndex], lastBends[activeIndex]).Contains(IKUtility.ToAngle(intersection.p1)))
+            {
+                angles[activeIndex].Insert(insertI[activeIndex], IKUtility.ToAngle(lastBends[activeIndex]));
+                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)inactiveSide, (int)activeSide, k[activeIndex]));
+                angles[activeIndex].Insert(insertI[activeIndex], IKUtility.ToAngle(intersection.p1));
+                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)activeSide, (int)inactiveSide, k[inactiveIndex] - 1));
+                insertI[activeIndex]++;
+                break;
+            }
+            // do a normal bend
+            else
+            {
+                Interval activeInterval = IKUtility.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
+
+                angles[activeIndex].Insert(insertI[activeIndex], activeInterval[inactiveIndex]);
+                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)inactiveSide, (int)activeSide, k[activeIndex] - 1));
+                insertI[activeIndex]++;
+                k[activeIndex]++;
+
+
+                loopGuard++;
+            }
+        } while (loopGuard > 0);
+
         // add angle to full bend on shorter side
         angles[shorterIndex].Insert(0, IKUtility.ToAngle(bendPoints[shorterIndex]));
         // add angle to full bend on longer side
-        angles[(shorterIndex + 1) % 2].Add(IKUtility.ToAngle(bendPoints[(shorterIndex + 1) % 2]));
-        regions[(shorterIndex + 1) % 2].Add(new MinReachRegion(shorterIndex, (shorterIndex + 1) % 2, startN));
+        //angles[(shorterIndex + 1) % 2].Add(IKUtility.ToAngle(bendPoints[(shorterIndex + 1) % 2]));
+        //regions[(shorterIndex + 1) % 2].Add(new MinReachRegion(shorterIndex, (shorterIndex + 1) % 2, startN));
 
         for (int i = 0; i < regions[0].Count; i++)
         {
