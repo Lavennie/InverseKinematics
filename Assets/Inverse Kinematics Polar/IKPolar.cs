@@ -23,7 +23,7 @@ public static class IKUtility
     public static Vector2 FollowChain(IKSegment[] segments, IndexRangeK fromToSplit, IntervalSide limitIndex1, IntervalSide limitIndex2)
     {
         Vector2 p1 = FollowChain(segments, new IndexRange(fromToSplit.startN, fromToSplit.k), limitIndex1, out float endAngle1);
-        Vector2 p2 = FollowChain(segments, new IndexRange(fromToSplit.k, fromToSplit.partCount), limitIndex2);
+        Vector2 p2 = FollowChain(segments, new IndexRange(fromToSplit.k, fromToSplit.endN), limitIndex2);
         return p1 + (Vector2)(Quaternion.Euler(0, 0, endAngle1) * p2);
     }
     public static Vector2 FollowChain(IKSegment[] segments, IndexRange fromTo, IntervalSide limitIndex)
@@ -34,7 +34,7 @@ public static class IKUtility
     {
         endAngle = 0;
         Vector2 p = Vector2.zero;
-        for (int i = fromTo.startN; i < fromTo.partCount; i++)
+        for (int i = fromTo.startN; i < fromTo.endN; i++)
         {
             if (limitIndex == IntervalSide.Min || limitIndex == IntervalSide.Max)
             {
@@ -45,29 +45,28 @@ public static class IKUtility
         return p;
     }
 
-    public static void DebugFollowChain(IKSegment[] segments, IndexRangeK fromToSplit, IntervalSide limitIndex1, IntervalSide limitIndex2, float startAngle)
+    public static void DebugFollowChain(IKSegment[] segments, IndexRangeK fromToSplit, IntervalSide limitIndex1, IntervalSide limitIndex2, float startAngle, Color color)
     {
         Vector2 p1 = FollowChain(segments, new IndexRange(fromToSplit.startN, fromToSplit.k), limitIndex1, out float endAngle);
-        DebugFollowChain(segments, new IndexRange(fromToSplit.startN, fromToSplit.k), limitIndex1, startAngle, 
-            FollowChain(segments, new IndexRange(0, fromToSplit.startN), limitIndex1), out float endAngle1);
-        DebugFollowChain(segments, new IndexRange(fromToSplit.k, fromToSplit.partCount), limitIndex2, endAngle1, p1);
+        DebugFollowChain(segments, new IndexRange(fromToSplit.startN, fromToSplit.k), limitIndex1, startAngle, Vector2.zero, color, out float endAngle1);
+        DebugFollowChain(segments, new IndexRange(fromToSplit.k, fromToSplit.endN), limitIndex2, endAngle1, p1, color);
     }
-    public static void DebugFollowChain(IKSegment[] segments, IndexRange fromTo, IntervalSide limitIndex, float startAngle, Vector2 origin)
+    public static void DebugFollowChain(IKSegment[] segments, IndexRange fromTo, IntervalSide limitIndex, float startAngle, Vector2 origin, Color color)
     {
-        DebugFollowChain(segments, fromTo, limitIndex, startAngle, origin, out float endAngle);
+        DebugFollowChain(segments, fromTo, limitIndex, startAngle, origin, color, out float endAngle);
     }
-    public static void DebugFollowChain(IKSegment[] segments, IndexRange fromTo, IntervalSide limitIndex, float startAngle, Vector2 origin, out float endAngle)
+    public static void DebugFollowChain(IKSegment[] segments, IndexRange fromTo, IntervalSide limitIndex, float startAngle, Vector2 origin, Color color, out float endAngle)
     {
         endAngle = startAngle;
         Vector2 p = origin;
-        for (int i = fromTo.startN; i < fromTo.partCount; i++)
+        for (int i = fromTo.startN; i < fromTo.endN; i++)
         {
             if (limitIndex == IntervalSide.Min || limitIndex == IntervalSide.Max)
             {
                 endAngle += segments[i].angleLimit[(int)limitIndex];
             }
             Vector2 nextChain = ToVector(endAngle, segments[i].length);
-            Debug.DrawLine(p, p + nextChain, Color.yellow, 10);
+            Debug.DrawLine(p, p + nextChain, color, 10);
             p += nextChain;
         }
     }
@@ -137,6 +136,7 @@ public static class IKUtility
         float sin = Mathf.Sin(radAngle);
         float y1 = sin * (center.y * sin + center.x * cos + Mathf.Sqrt(Mathf.Pow(center.y * sin + center.x * cos, 2) - center.x * center.x - center.y * center.y + radius * radius));
         float y2 = sin * (center.y * sin + center.x * cos - Mathf.Sqrt(Mathf.Pow(center.y * sin + center.x * cos, 2) - center.x * center.x - center.y * center.y + radius * radius));
+        // TODO: sign depending on angle
         float x1 = center.x + Mathf.Sqrt(radius * radius - (y1 - center.y) * (y1 - center.y));
         float x2 = center.x - Mathf.Sqrt(radius * radius - (y2 - center.y) * (y2 - center.y));
 
@@ -148,6 +148,7 @@ public class IKPolar : MonoBehaviour
 {
     public bool debugChainBend = true;
     public bool debugTargetLine = true;
+    public int debugN = 4;
     public Transform target;
 
     public IKSegment[] segments;
@@ -159,6 +160,7 @@ public class IKPolar : MonoBehaviour
 
     private void Awake()
     {
+        DebugChainBend(Vector2.zero, 0, debugN, Color.green, 10);
         Precalculate();
     }
 
@@ -174,7 +176,7 @@ public class IKPolar : MonoBehaviour
 
         if (debugChainBend)
         {
-            DebugChainBend(Vector2.zero, 0, 0, Color.green);
+            DebugChainBend(Vector2.zero, 0, 0, Color.green, 0.01f);
         }
 
         if (target == null)
@@ -210,24 +212,25 @@ public class IKPolar : MonoBehaviour
     }
 #endif
 
-    private void DebugChainBend(Vector2 pos, float angle, int startN, Color color)
+    private void DebugChainBend(Vector2 pos, float angle, int startN, Color color, float duration)
     {
-        DebugChainBend(pos, Quaternion.Euler(0, 0, angle), startN, color);
+        DebugChainBend(pos, Quaternion.Euler(0, 0, angle), startN, color, duration);
     }
-    private void DebugChainBend(Vector2 pos, Quaternion rot, int startN, Color color)
+    private void DebugChainBend(Vector2 pos, Quaternion rot, int startN, Color color, float duration)
     {
         // draw min/max bend
         Vector2 pMin = pos;
         Vector2 pMax = pos;
+
         Interval angleSum = new Interval(0, 0);
-        for (int i = 0; i < segments.Length; i++)
+        for (int i = startN; i < segments.Length; i++)
         {
             angleSum.min += segments[i].angleLimit[0];
             angleSum.max += segments[i].angleLimit[1];
             Vector2 dirMin = rot * new Vector2(Mathf.Cos(angleSum.min * Mathf.Deg2Rad), Mathf.Sin(angleSum.min * Mathf.Deg2Rad)) * segments[i].length;
             Vector2 dirMax = rot * new Vector2(Mathf.Cos(angleSum.max * Mathf.Deg2Rad), Mathf.Sin(angleSum.max * Mathf.Deg2Rad)) * segments[i].length;
-            Debug.DrawRay(pMin, dirMin, color, 0.01f);
-            Debug.DrawRay(pMax, dirMax, color, 0.01f);
+            Debug.DrawRay(pMin, dirMin, color, duration);
+            Debug.DrawRay(pMax, dirMax, color, duration);
             pMin += dirMin;
             pMax += dirMax;
         }
@@ -237,14 +240,15 @@ public class IKPolar : MonoBehaviour
     {
         dataFront = new Reach[segments.Length];
         int i = 0;
-        for (int k = segments.Length; k > segments.Length - 1; k--)
+        /*for (int k = segments.Length; k > 0; k--)
         {
             dataFront[i] = new Reach(segments, 0, k);
-            i++;
-        }
+            break;
+        }*/
+        dataBack = new Reach[segments.Length];
+        dataFront[0] = new Reach(segments, 0, debugN);
 
-        /*dataBack = new Reach[segments.Length];
-        for (int j = 0; j < segments.Length; j++)
+        /*for (int j = 0; j < segments.Length; j++)
         {
             dataBack[j] = new Reach(segments, j, segments.Length);
         }*/
@@ -515,8 +519,8 @@ public class IKPolar : MonoBehaviour
         Debug.Log(n);
         int segmentI = segments.Length - n;
         Debug.DrawCircle(origin, Vector3.Distance(origin, target), 64, Color.black);
-        DebugChainBend(origin, segments[segmentI].angleLimit.min, segmentI, Color.red);
-        DebugChainBend(origin, segments[segmentI].angleLimit.max, segmentI, Color.magenta);
+        DebugChainBend(origin, segments[segmentI].angleLimit.min, segmentI, Color.red, 0.01f);
+        DebugChainBend(origin, segments[segmentI].angleLimit.max, segmentI, Color.magenta, 0.01f);
 
         Debug.DrawReach(dataBack[segmentI], segments, Color.red, segments[segmentI].angleLimit.min);
         Debug.DrawReach(dataBack[segmentI], segments, Color.magenta, segments[segmentI].angleLimit.max);
@@ -608,31 +612,31 @@ public class MinReachData
     private MinReachRegion[] regions;
     private int startN, partCount;
 
-    public MinReachData(IKSegment[] segments, int startN, int partCount)
+    public MinReachData(IKSegment[] segments, int startN, int endN)
     {
         this.startN = startN;
-        this.partCount = partCount;
+        this.partCount = endN;
 
-        Debug.Log("_ " + startN + "  " + partCount);
+        Debug.Log("_ " + startN + "  " + endN);
 
-        if (partCount - startN <= 0)
+        if (endN - startN <= 0)
         {
             return;
         }
         // only one chain part
-        if (partCount - startN == 1)
+        if (endN - startN == 1)
         {
             this.angles = new float[2] { segments[startN].angleLimit.min, segments[startN].angleLimit.max };
-            this.regions = new MinReachRegion[1] { new MinReachRegion(0, 1, startN) };
+            this.regions = new MinReachRegion[1] { new MinReachRegion(IntervalSide.Min, startN) };
             return;
         }
         // [0]: shorter bend side
         // [1]: longer bend side
-        int shorterIndex = 0;
+        IntervalSide shorterSide =  IntervalSide.Min;
         Vector3[] bendPoints = new Vector3[2]
         {
-            IKUtility.FollowChain(segments, new IndexRange(startN, partCount), IntervalSide.Min),
-            IKUtility.FollowChain(segments, new IndexRange(startN, partCount), IntervalSide.Max)
+            IKUtility.FollowChain(segments, new IndexRange(startN, endN), IntervalSide.Min),
+            IKUtility.FollowChain(segments, new IndexRange(startN, endN), IntervalSide.Max)
         };
         float[] lengths = new float[2]
         {
@@ -658,19 +662,22 @@ public class MinReachData
             List<MinReachRegion> temp4 = regions[0];
             regions[0] = regions[1];
             regions[1] = temp4;
-            shorterIndex = 1;
+            shorterSide = IntervalSide.Max;
         }
+        IntervalSide longerSide = (shorterSide == IntervalSide.Min) ? IntervalSide.Max : IntervalSide.Min;
+        Debug.Log("_ shorter side " + shorterSide);
 
         // chain with two parts
-        if (partCount - startN == 2)
+        if (endN - startN == 2)
         {
             this.angles = new float[3]
             {
-                IKUtility.ToAngle(IKUtility.FollowChain(segments, new IndexRange(startN, partCount), (IntervalSide)shorterIndex)),
-                IKUtility.ToAngle(IKUtility.FollowChain(segments, new IndexRangeK(startN, startN + 1, partCount), (IntervalSide)((shorterIndex + 1) % 2), (IntervalSide)shorterIndex)),
-                IKUtility.ToAngle(IKUtility.FollowChain(segments, new IndexRange(startN, partCount), (IntervalSide)((shorterIndex + 1) % 2)))
+                IKUtility.ToAngle(IKUtility.FollowChain(segments, new IndexRange(startN, endN), shorterSide)),
+                IKUtility.ToAngle(IKUtility.FollowChain(segments, new IndexRangeK(startN, startN + 1, endN), longerSide, shorterSide)),
+                IKUtility.ToAngle(IKUtility.FollowChain(segments, new IndexRange(startN, endN), longerSide))
             };
-            this.regions = new MinReachRegion[2] { new MinReachRegion((shorterIndex + 1) % 2, shorterIndex, startN), new MinReachRegion((shorterIndex + 1) % 2, shorterIndex, startN + 1) };
+            IntervalSide bendSide = (shorterSide == 0) ? IntervalSide.Max : IntervalSide.Min;
+            this.regions = new MinReachRegion[2] { new MinReachRegion(bendSide, startN), new MinReachRegion(bendSide, startN + 1) };
             return;
         }
 
@@ -684,27 +691,24 @@ public class MinReachData
         // start bending to other side starting with shorter side
         int activeIndex = 0;
         int inactiveIndex = 1;
-        IntervalSide activeSide;
-        IntervalSide inactiveSide;
+        IntervalSide activeSide = shorterSide;
+        IntervalSide inactiveSide = longerSide;
+        // first part works
         while (true)
         {
             bool exit = false;
             // radius of above interval at end point that is more bent
-            float activeMaxLength;
-            float inactiveMaxLength;
             Interval activeInterval;
             Interval inactiveInterval;
             do
             {
-                activeSide = (activeIndex == 0) ? (IntervalSide)shorterIndex : (IntervalSide)((shorterIndex + 1) % 2);
-                inactiveSide = (activeSide == IntervalSide.Min) ? IntervalSide.Max : IntervalSide.Min;
-
                 // calculate the bend position (Forward Kinematics)
-                IKUtility.DebugFollowChain(segments, new IndexRangeK(startN, k[activeIndex], partCount), inactiveSide, activeSide, 0);
-                Vector2 reverseBend = IKUtility.FollowChain(segments, new IndexRangeK(startN, k[activeIndex], partCount), inactiveSide, activeSide);
+                Debug.Log(endN + "  " + k[activeIndex]);
+                IKUtility.DebugFollowChain(segments, new IndexRangeK(startN, k[activeIndex], endN), inactiveSide, activeSide, 0, Color.yellow);
+                Vector2 reverseBend = IKUtility.FollowChain(segments, new IndexRangeK(startN, k[activeIndex], endN), inactiveSide, activeSide);
                 Vector2 debugCenter = IKUtility.FollowChain(segments, new IndexRange(0, k[activeIndex] - 1), inactiveSide);
-                float debugRadius = IKUtility.FollowChain(segments, new IndexRange(k[activeIndex] - 1, partCount), activeSide).magnitude;
-                Debug.DrawCircle(debugCenter, debugRadius, 64, Color.cyan, 10);
+                float debugRadius = IKUtility.FollowChain(segments, new IndexRange(k[activeIndex] - 1, endN), activeSide).magnitude;
+                //Debug.DrawCircle(debugCenter, debugRadius, 64, Color.cyan, 10);
                 //Debug.Log(activeSide + "  " + k[activeIndex]);
                 // update bend history
                 prevBends[activeIndex] = lastBends[activeIndex];
@@ -713,15 +717,13 @@ public class MinReachData
                 activeInterval = IKUtility.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
                 inactiveInterval = IKUtility.AngleInterval(prevBends[inactiveIndex], lastBends[inactiveIndex]);
 
+                Debug.Log("~> " + activeIndex + "  " + k[activeIndex] + " " + activeSide + "  " + activeInterval);
 
-                angles[activeIndex].Insert(insertI[activeIndex], activeInterval[inactiveIndex]);
-                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)inactiveSide, (int)activeSide, k[activeIndex] - 1));
+                Debug.DrawAngle(Vector3.zero, activeInterval[(int)activeSide], 10, Color.black, 10);
+                angles[activeIndex].Insert(insertI[activeIndex], activeInterval[(int)activeSide]);
+                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion(inactiveSide, k[activeIndex] - 1));
                 insertI[activeIndex]++;
                 k[activeIndex]++;
-
-                // TODO: calculate correctly, now the length at max bend is calculated instead of max length reached during bending
-                activeMaxLength = lastBends[activeIndex].magnitude;
-                inactiveMaxLength = lastBends[inactiveIndex].magnitude;
 
                 // infinite loop protection while still writing this function
                 if (k[0] > 100 || k[1] > 100)
@@ -729,10 +731,32 @@ public class MinReachData
                     exit = true;
                     break;
                 }
-            } while (activeMaxLength < inactiveMaxLength); // not if at end activeLength < inactiveLength, but if at any time it crossed over inactiveLength
+                Circle otherCircle = new Circle(
+                    IKUtility.FollowChain(segments, new IndexRange(startN, k[inactiveIndex] - 1), activeSide),
+                    IKUtility.FollowChain(segments, new IndexRange(k[inactiveIndex] - 1, endN), inactiveSide).magnitude);
+                //Debug.DrawCircle(otherCircle, 64, Color.cyan, 10);
+                if (Vector2.Distance(otherCircle.center, reverseBend) > otherCircle.radius)
+                {
+                    break;
+                }
+                if (k[activeIndex] > endN)
+                {
+                    Debug.DrawAngle(Vector3.zero, activeInterval[(int)inactiveSide], 10, Color.black, 10);
+                    angles[activeIndex].Insert(insertI[activeIndex], activeInterval[(int)inactiveSide]);
+                    k[activeIndex]++;
+                    break;
+                }
+            } while (true); // not if at end activeLength < inactiveLength, but if at any time it crossed over inactiveLength
+
+            if (k[activeIndex] > endN)
+            {
+                break;
+            }
 
             activeIndex = inactiveIndex;
             inactiveIndex = (inactiveIndex + 1) % 2;
+            activeSide = (activeIndex == 0) ? shorterSide : longerSide;
+            inactiveSide = (activeIndex == 0) ? longerSide : shorterSide;
             // bend only the new side until there is intersection, otherwise continue with normal bends on new side
             if (Interval.AreOverlapping(activeInterval, inactiveInterval))
             {
@@ -745,79 +769,130 @@ public class MinReachData
             }
         }
 
-        // bend last side until there is an intersection
-        int loopGuard = 100;
-        do
+        if (k[activeIndex] <= endN)
         {
-            // centers and radiuses of last bends circles on both sides
-            Vector2 c1 = IKUtility.FollowChain(segments, new IndexRange(startN, k[activeIndex]), inactiveSide);
-            Vector2 c2 = IKUtility.FollowChain(segments, new IndexRange(startN, k[inactiveIndex] - 1), activeSide);
-            Vector2 r1 = IKUtility.FollowChain(segments, new IndexRange(k[activeIndex], partCount), activeSide);
-            Vector2 r2 = IKUtility.FollowChain(segments, new IndexRange(k[inactiveIndex] - 1, partCount), inactiveSide);
-            //Debug.DrawCircle(c1, r1.magnitude, 128, Color.white, 10);
-            //Debug.DrawCircle(c2, r2.magnitude, 128, Color.black, 10);
-            CircleIntersection intersection = IKUtility.TwoCircleIntersection(c1, c2, r1.magnitude, r2.magnitude);
-
-            // there is an intersection in valid angle intervals
-            if (IKUtility.AngleInterval(prevBends[inactiveIndex], lastBends[activeIndex]).Contains(IKUtility.ToAngle(intersection.p1)))
+            Debug.Log("Do Part 2");
+            // bend last side until there is an intersection
+            int loopGuard = 100;
+            do
             {
-                angles[activeIndex].Insert(insertI[activeIndex], IKUtility.ToAngle(lastBends[activeIndex]));
-                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)inactiveSide, (int)activeSide, k[activeIndex]));
-                angles[activeIndex].Insert(insertI[activeIndex], IKUtility.ToAngle(intersection.p1));
-                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)activeSide, (int)inactiveSide, k[inactiveIndex] - 1));
-                insertI[activeIndex]++;
-                break;
-            }
-            // do a normal bend
-            else
-            {
-                Interval activeInterval = IKUtility.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
+                // continue on other side because max bend has been reached
+                if (k[activeIndex] > endN || k[inactiveIndex] > endN + 1)
+                {
+                    activeIndex = inactiveIndex;
+                    inactiveIndex = (inactiveIndex + 1) % 2;
+                    k[activeIndex] = Mathf.Min(k[activeIndex], endN);
+                    k[inactiveIndex] = Mathf.Min(k[inactiveIndex], endN + 1);
+                }
+                // centers and radiuses of last bends circles on both sides
+                Vector2 c1 = IKUtility.FollowChain(segments, new IndexRange(startN, k[activeIndex] - 2), inactiveSide);
+                Vector2 c2 = IKUtility.FollowChain(segments, new IndexRange(startN, k[inactiveIndex] - 2), activeSide);
+                Vector2 r1 = IKUtility.FollowChain(segments, new IndexRange(k[activeIndex] - 2, endN), activeSide);
+                Vector2 r2 = IKUtility.FollowChain(segments, new IndexRange(k[inactiveIndex] - 2, endN), inactiveSide);
+                //Debug.DrawCircle(c1, r1.magnitude, 128, Color.white, 10);
+                //Debug.DrawCircle(c2, r2.magnitude, 128, Color.black, 10);
+                CircleIntersection intersection = IKUtility.TwoCircleIntersection(c1, c2, r1.magnitude, r2.magnitude);
 
-                angles[activeIndex].Insert(insertI[activeIndex], activeInterval[inactiveIndex]);
-                regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion((int)inactiveSide, (int)activeSide, k[activeIndex] - 1));
-                insertI[activeIndex]++;
-                k[activeIndex]++;
+                // there is an intersection in valid angle intervals
+                Interval arcIntersection = Interval.Overlap(new Interval(IKUtility.ToAngle(prevBends[inactiveIndex]), IKUtility.ToAngle(lastBends[inactiveIndex])),
+                    new Interval(IKUtility.ToAngle(prevBends[activeIndex]), IKUtility.ToAngle(lastBends[activeIndex])));
+                //Debug.DrawAngleInterval(Vector3.zero, arcIntersection, 20, Color.magenta, 10);
+                if (arcIntersection.Contains(IKUtility.ToAngle(intersection.p1)))
+                {
+                    Debug.DrawAngle(Vector3.zero, IKUtility.ToAngle(intersection.p1), 10, Color.white, 10);
+                    angles[activeIndex].Insert(insertI[activeIndex], IKUtility.ToAngle(intersection.p1));
+                    insertI[activeIndex]++;
+                    break;
+                }
+                // do a normal bend
+                else
+                {
+                    //IKUtility.DebugFollowChain(segments, new IndexRangeK(startN, k[activeIndex], partCount), inactiveSide, activeSide, 0, new Color(1.0f, 0.5f, 0.0f));
+                    Vector2 reverseBend = IKUtility.FollowChain(segments, new IndexRangeK(startN, k[activeIndex], endN), inactiveSide, activeSide);
+                    prevBends[activeIndex] = lastBends[activeIndex];
+                    lastBends[activeIndex] = reverseBend;
+                    Interval activeInterval = IKUtility.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
 
+                    Debug.DrawAngle(Vector3.zero, activeInterval[inactiveIndex], 10, Color.white, 10);
+                    angles[activeIndex].Insert(insertI[activeIndex], activeInterval[inactiveIndex]);
+                    regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion(inactiveSide, k[activeIndex] - 1));
+                    insertI[activeIndex]++;
+                    k[activeIndex]++;
 
-                loopGuard++;
-            }
-        } while (loopGuard > 0);
-
-        // add angle to full bend on shorter side
-        angles[shorterIndex].Insert(0, IKUtility.ToAngle(bendPoints[shorterIndex]));
-        // add angle to full bend on longer side
-        //angles[(shorterIndex + 1) % 2].Add(IKUtility.ToAngle(bendPoints[(shorterIndex + 1) % 2]));
-        //regions[(shorterIndex + 1) % 2].Add(new MinReachRegion(shorterIndex, (shorterIndex + 1) % 2, startN));
-
-        for (int i = 0; i < regions[0].Count; i++)
-        {
-            Debug.Log("shorter: " + regions[0][i]);
-        }
-        for (int i = 0; i < regions[1].Count; i++)
-        {
-            Debug.Log("longer: " + regions[1][i]);
+                    loopGuard--;
+                }
+            } while (loopGuard > 0);
         }
 
         // save calculated values
         this.angles = new float[angles[0].Count + angles[1].Count];
-        for (int i = 0; i < angles[0].Count; i++)
-        {
-            this.angles[i] = angles[0][i];
-            Debug.DrawAngle(Vector3.zero, this.angles[i], 10, Color.black, 10);
-        }
-        for (int i = 0; i < angles[1].Count; i++)
-        {
-            this.angles[angles[0].Count + i] = angles[1][i];
-            Debug.DrawAngle(Vector3.zero, this.angles[angles[0].Count + i], 10, Color.black, 10);
-        }
         this.regions = new MinReachRegion[regions[0].Count + regions[1].Count];
-        for (int i = 0; i < regions[0].Count; i++)
+
+        for (int j = 0; j < 2; j++)
         {
-            this.regions[i] = regions[0][i];
+            for (int i = 0; i < angles[j].Count; i++)
+            {
+                Debug.Log("i: " + j + " :" + angles[j][i]);
+            }
         }
-        for (int i = 0; i < regions[1].Count; i++)
+        for (int i = angles[1].Count - 1; i >= 0; i--)
         {
-            this.regions[regions[0].Count + i] = regions[1][i];
+            this.angles[angles[0].Count + (angles[1].Count - 1 - i)] = angles[1][i];
+        }
+        if (shorterSide == IntervalSide.Min)
+        {
+            /*for (int i = 0; i < angles[1].Count; i++)
+            {
+                this.angles[i] = angles[1][i];
+            }
+            for (int i = angles[0].Count - 1; i >= 0; i--)
+            {
+                this.angles[angles[1].Count + (angles[0].Count - 1 - i)] = angles[0][i];
+            }
+            for (int i = 0; i < regions[1].Count; i++)
+            {
+                this.regions[i] = regions[1][i];
+            }
+            for (int i = regions[0].Count - 1; i >= 0; i--)
+            {
+                this.regions[regions[1].Count + (regions[0].Count - 1 - i)] = regions[0][i];
+            }*/
+
+            for (int i = 0; i < angles[0].Count; i++)
+            {
+                this.angles[i] = angles[0][i];
+            }
+            for (int i = angles[1].Count - 1; i >= 0; i--)
+            {
+                this.angles[angles[0].Count + (angles[1].Count - 1 - i)] = angles[1][i];
+            }
+            for (int i = 0; i < regions[0].Count; i++)
+            {
+                this.regions[i] = regions[0][i];
+            }
+            for (int i = regions[1].Count - 1; i >= 0; i--)
+            {
+                this.regions[regions[0].Count + (regions[1].Count - 1 - i)] = regions[1][i];
+            }
+        }
+        else
+        {
+            for (int i = 0; i < angles[0].Count; i++)
+            {
+                this.angles[i] = angles[0][i];
+            }
+            for (int i = angles[1].Count - 1; i >= 0; i--)
+            {
+                this.angles[angles[0].Count + (angles[1].Count - 1 - i)] = angles[1][i];
+            }
+            for (int i = 0; i < regions[0].Count; i++)
+            {
+                this.regions[i] = regions[0][i];
+            }
+            for (int i = regions[1].Count - 1; i >= 0; i--)
+            {
+                this.regions[regions[0].Count + (regions[1].Count - 1 - i)] = regions[1][i];
+            }
         }
     }
 
@@ -829,20 +904,18 @@ public class MinReachData
             {
                 float angleSum = 0;
                 Vector2 center = Vector2.zero;
-                for (int j = 0; j < regions[i].MoveChainIndex; j++)
+                for (int j = startN; j < regions[i].MoveChainIndex; j++)
                 {
-                    angleSum += segments[j].angleLimit[regions[i].StartSide];
+                    angleSum += segments[j].angleLimit[(int)regions[i].StartSide];
                     center += IKUtility.ToVector(angleSum, segments[j].length);
                 }
                 angleSum = 0;
                 Vector2 movingPart = Vector2.zero;
                 for (int j = regions[i].MoveChainIndex; j < partCount; j++)
                 {
-                    angleSum += segments[j].angleLimit[regions[i].ContinueSide];
+                    angleSum += segments[j].angleLimit[(int)regions[i].ContinueSide];
                     movingPart += IKUtility.ToVector(angleSum, segments[j].length);
                 }
-
-                //Debug.DrawCircle(new Circle(center, movingPart.magnitude), 128, Color.yellow);
 
                 return IKUtility.IntersectionLineCircle(angle, center, movingPart.magnitude).p1.magnitude;
             }
@@ -852,13 +925,13 @@ public class MinReachData
 
     public Circle GetCircle(IKSegment[] segments, int i)
     {
-        Vector2 center = IKUtility.FollowChain(segments, new IndexRange(startN, regions[i].MoveChainIndex), (IntervalSide)regions[i].StartSide);
-        float radius = IKUtility.FollowChain(segments, new IndexRange(regions[i].MoveChainIndex, partCount), (IntervalSide)regions[i].ContinueSide).magnitude;
+        Vector2 center = IKUtility.FollowChain(segments, new IndexRange(startN, regions[i].MoveChainIndex), regions[i].StartSide);
+        float radius = IKUtility.FollowChain(segments, new IndexRange(regions[i].MoveChainIndex, partCount), regions[i].ContinueSide).magnitude;
         return new Circle(center, radius);
     }
     public Interval GetCircleInterval(IKSegment[] segments, int i)
     {
-        Vector2 center = IKUtility.FollowChain(segments, new IndexRange(startN, regions[i].MoveChainIndex), (IntervalSide)regions[i].StartSide);
+        Vector2 center = IKUtility.FollowChain(segments, new IndexRange(startN, regions[i].MoveChainIndex), regions[i].StartSide);
         Vector2 v1 = IKUtility.ToVector(angles[i], Get(segments, angles[i]));
         Vector2 v2 = IKUtility.ToVector(angles[i + 1], Get(segments, angles[i + 1]));
         return new Interval(IKUtility.ToAngle(v1 - center), IKUtility.ToAngle(v2 - center));
@@ -890,10 +963,14 @@ public class MaxReachData
 
     public float Get(IKSegment[] segments, float angle)
     {
-        float[] lengths = new float[endN];
+        float[] lengths = new float[endN - startN];
         for (int i = startN; i < endN; i++)
         {
-            lengths[i] = segments[i].length;
+            lengths[i - startN] = segments[i].length;
+        }
+        for (int i = 0; i < angleSums.Length; i++)
+        {
+            Debug.DrawAngleInterval(Vector2.zero, angleSums[i], 20, Color.magenta, 10);
         }
         return Get(segments, angle, endN, lengths);
     }
@@ -902,9 +979,9 @@ public class MaxReachData
         // to prevent infinite loops (just in case though it shouldn't happen)
         if (k <= startN) { return 0; }
         // single chain part
-        else if (k - startN == 1) { return lengths[startN]; }
+        else if (k - startN == 1) { return lengths[0]; }
 
-        if (angleSums[k - 2].Contains(angle))
+        if (angleSums[k - 2 - startN].Contains(angle))
         {
             float[] newLengths = new float[lengths.Length - 1];
             for (int i = 0; i < newLengths.Length; i++)
@@ -914,13 +991,13 @@ public class MaxReachData
             newLengths[newLengths.Length - 1] += lengths[newLengths.Length];
             return Get(segments, angle, k - 1, newLengths);
         }
-        else if (new Interval(angleSums[k - 1].min, angleSums[k - 2].min).Contains(angle))
+        else if (new Interval(angleSums[k - 1 - startN].min, angleSums[k - 2 - startN].min).Contains(angle))
         {
-            return IKUtility.IntersectionLineCircle(angle, IKUtility.FollowChain(segments, new IndexRange(startN, k - 1), IntervalSide.Min), lengths[k - 1]).p1.magnitude;
+            return IKUtility.IntersectionLineCircle(angle, IKUtility.FollowChain(segments, new IndexRange(startN, k - 1), IntervalSide.Min), lengths[k - 1 - startN]).p1.magnitude;
         }
-        else if (new Interval(angleSums[k - 2].max, angleSums[k - 1].max).Contains(angle))
+        else if (new Interval(angleSums[k - 2 - startN].max, angleSums[k - 1 - startN].max).Contains(angle))
         {
-            return IKUtility.IntersectionLineCircle(angle, IKUtility.FollowChain(segments, new IndexRange(startN, k - 1), IntervalSide.Max), lengths[k - 1]).p1.magnitude;
+            return IKUtility.IntersectionLineCircle(angle, IKUtility.FollowChain(segments, new IndexRange(startN, k - 1), IntervalSide.Max), lengths[k - 1 - startN]).p1.magnitude;
         }
         else
         {
@@ -930,12 +1007,12 @@ public class MaxReachData
 
     public Circle GetCircle(IKSegment[] segments, int i)
     {
-        int index = Mathf.Abs(i); // from ... -2, -1, 0, 1, 2, ... to actual segment index
+        int index = startN + Mathf.Abs(i); // from ... -2, -1, 0, 1, 2, ... to actual segment index
         Vector2 center = IKUtility.FollowChain(segments, new IndexRange(startN, index), (i < 0) ? IntervalSide.Min : IntervalSide.Max);
         float radius = 0;
         for (int k = index; k < endN; k++)
         {
-            radius += segments[startN + k].length;
+            radius += segments[k].length;
         }
         return new Circle(center, radius);
     }
@@ -943,12 +1020,12 @@ public class MaxReachData
     {
         if (i == 0)
         {
-            return angleSums[startN];
+            return angleSums[0];
         }
         else
         {
             IntervalSide side = (i < 0) ? IntervalSide.Min : IntervalSide.Max;
-            int index = Mathf.Abs(i); // from ... -2, -1, 0, 1, 2, ... to actual segment index
+            int index = startN + Mathf.Abs(i); // from ... -2, -1, 0, 1, 2, ... to actual segment index
             Vector2 center = IKUtility.FollowChain(segments, new IndexRange(startN, index), side);
             Vector2 v1 = IKUtility.FollowChain(segments, new IndexRangeK(startN, index, endN), side, IntervalSide.Center);
             Vector2 v2 = IKUtility.FollowChain(segments, new IndexRangeK(startN, index + 1, endN), side, IntervalSide.Center);
@@ -965,24 +1042,22 @@ public class MaxReachData
 [System.Serializable]
 public struct MinReachRegion
 {
-    private int startSide;
-    private int continueSide;
+    private IntervalSide startSide;
     private int moveChainIndex;
 
-    public MinReachRegion(int startSide, int continueSide, int moveChainIndex)
+    public MinReachRegion(IntervalSide startSide, int moveChainIndex)
     {
         this.startSide = startSide;
-        this.continueSide = continueSide;
         this.moveChainIndex = moveChainIndex;
     }
 
     public override string ToString()
     {
-        return $"(Start side = {startSide}, continue side = {continueSide}, move chain index = {moveChainIndex})";
+        return $"(Start side = {StartSide}, continue side = {ContinueSide}, move chain index = {moveChainIndex})";
     }
 
-    public int StartSide { get { return startSide; } }
-    public int ContinueSide { get { return continueSide; } }
+    public IntervalSide StartSide { get { return startSide; } }
+    public IntervalSide ContinueSide { get { return (startSide == IntervalSide.Min) ? IntervalSide.Max : IntervalSide.Min; } }
     public int MoveChainIndex { get { return moveChainIndex; } }
 }
 [System.Serializable]
@@ -1133,12 +1208,12 @@ public struct CircleIntersection
 }
 public class IndexRange
 {
-    public int startN, partCount;
+    public int startN, endN;
 
     public IndexRange(int startN, int partCount)
     {
         this.startN = startN;
-        this.partCount = partCount;
+        this.endN = partCount;
     }
 }
 public class IndexRangeK : IndexRange
