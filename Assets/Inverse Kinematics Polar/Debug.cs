@@ -4,19 +4,25 @@ public class Debug : UnityEngine.Debug
 {
     public static void DrawReach(Reach reach, IKSegment[] segments, Color color, float rotAngle = 0)
     {
-        DrawReach(reach, segments, color, 0, rotAngle);
+        DrawReach(Vector3.zero, reach, segments, color, 0, rotAngle);
     }
-    public static void DrawReach(Reach reach, IKSegment[] segments, Color color, float duration, float rotAngle = 0)
+    public static void DrawReach(Vector3 origin, Reach reach, IKSegment[] segments, Color color, float rotAngle = 0)
+    {
+        DrawReach(origin, reach, segments, color, 0, rotAngle);
+    }
+    public static void DrawReach(Vector3 origin, Reach reach, IKSegment[] segments, Color color, float duration, float rotAngle = 0)
     {
         foreach (var circleInterval in reach.GetMaxCircles(segments))
         {
-            DrawArc(circleInterval.Key, circleInterval.Value, 64, color, duration, rotAngle);
+            Circle circle = new Circle(origin + Quaternion.Euler(0, 0, rotAngle) * circleInterval.Key.center, circleInterval.Key.radius);
+            DrawArc(circle, circleInterval.Value, 64, color, duration, rotAngle);
         }
         color *= 0.7f;
         color.a = 1.0f;
         foreach (var circleInterval in reach.GetMinCircles(segments))
         {
-            DrawArc(circleInterval.Key, circleInterval.Value, 64, Color.green, duration, rotAngle);
+            Circle circle = new Circle(origin + Quaternion.Euler(0, 0, rotAngle) * circleInterval.Key.center, circleInterval.Key.radius);
+            DrawArc(circle, circleInterval.Value, 64, color, duration, rotAngle);
         }
     }
 
@@ -97,11 +103,13 @@ public class Debug : UnityEngine.Debug
     {
         DrawAngle(position, angleInterval.min, radius, color);
         DrawAngle(position, angleInterval.max, radius, color);
+        DrawArc(position, radius / 6, angleInterval, 64, color);
     }
     public static void DrawAngleInterval(Vector3 position, Interval angleInterval, float radius, Color color, float duration)
     {
         DrawAngle(position, angleInterval.min, radius, color, duration);
         DrawAngle(position, angleInterval.max, radius, color, duration);
+        DrawArc(position, radius / 6, angleInterval, 64, color, duration);
     }
 
     public static void DrawPoint(Vector3 position, Color color, float size = 0.1f)

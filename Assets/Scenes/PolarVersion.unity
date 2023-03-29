@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.18028378, g: 0.22571412, b: 0.30692285, a: 1}
+  m_IndirectSpecularColor: {r: 0.18028331, g: 0.2257133, b: 0.3069217, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -3284,6 +3284,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   debugChainBend: 1
   debugTargetLine: 0
+  debugN: 4
+  debugLevel: 0
   target: {fileID: 89429116}
   segments:
   - length: 2
@@ -3310,6 +3312,7 @@ MonoBehaviour:
       max: 30
     targetAngle: 0.5
     animateTargetAngle: 0
+  debug: 0
 --- !u!4 &1476430786
 Transform:
   m_ObjectHideFlags: 0
@@ -3638,6 +3641,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   debugChainBend: 1
   debugTargetLine: 0
+  debugN: 4
+  debugLevel: 0
   target: {fileID: 96448383}
   segments:
   - length: 2
@@ -3670,6 +3675,7 @@ MonoBehaviour:
       max: 23
     targetAngle: 0.5
     animateTargetAngle: 0
+  debug: 0
 --- !u!4 &1538191420
 Transform:
   m_ObjectHideFlags: 0
