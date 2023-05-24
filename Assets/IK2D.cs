@@ -2,7 +2,7 @@ using System;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 
-public static class Helper
+/*public static class Helper
 {
     /// <summary>
     /// 
@@ -384,4 +384,4 @@ public struct IntervalD
 
     public static Interval Empty { get { return new Interval(double.NaN, double.NaN); } }
     public double this[int i] { get { return (i % 2 == 0) ? min : max; } }
-}
+}*/
