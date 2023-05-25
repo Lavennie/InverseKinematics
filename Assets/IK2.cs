@@ -319,7 +319,7 @@ namespace InverseKinematics2D
         /// <param name="angle">Angle of vector in IK space</param>
         /// <param name="length">Length of vector</param>
         /// <returns>A vector in IK space</returns>
-        public Vector2 Vector(float angle, float length)
+        public static Vector2 Vector(float angle, float length)
         {
             return new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad)) * length;
         }
@@ -328,7 +328,7 @@ namespace InverseKinematics2D
         /// </summary>
         /// <param name="p">Point given in the IK space</param>
         /// <returns>Angle to point in IK space</returns>
-        public float Angle(Vector2 p)
+        public static float Angle(Vector2 p)
         {
             return Vector2.SignedAngle(Vector2.right, p);
         }
@@ -338,7 +338,7 @@ namespace InverseKinematics2D
         /// <param name="p1">Point in IK space</param>
         /// <param name="p2">Point in IK space</param>
         /// <returns>Angle interval between <paramref name="p1"/> and <paramref name="p2"/></returns>
-        public Interval AngleInterval(Vector2 p1, Vector2 p2)
+        public static Interval AngleInterval(Vector2 p1, Vector2 p2)
         {
             return new Interval(Angle(p1), Angle(p2));
         }
@@ -786,16 +786,15 @@ namespace InverseKinematics2D
                 shorterSide = IntervalSide.Max;
             }
             IntervalSide longerSide = (shorterSide == IntervalSide.Min) ? IntervalSide.Max : IntervalSide.Min;
-            //Debug.Log("_ shorter side " + shorterSide);
 
             // chain with two parts
             if (range.Size == 2)
             {
                 this.angles = new float[3]
                 {
-                    ik.Angle(ik.FollowChain(range, shorterSide, out _)),
-                    ik.Angle(ik.FollowChain(new IndexRangeK(range.startN, range.startN + 1, range.endN), longerSide, shorterSide)),
-                    ik.Angle(ik.FollowChain(range, longerSide, out _))
+                    IK2.Angle(ik.FollowChain(range, shorterSide, out _)),
+                    IK2.Angle(ik.FollowChain(new IndexRangeK(range.startN, range.startN + 1, range.endN), longerSide, shorterSide)),
+                    IK2.Angle(ik.FollowChain(range, longerSide, out _))
                 };
                 IntervalSide bendSide = (shorterSide == 0) ? IntervalSide.Max : IntervalSide.Min;
                 this.regions = new MinReachRegion[2] { new MinReachRegion(bendSide, range.startN), new MinReachRegion(bendSide, range.startN + 1) };
@@ -831,8 +830,8 @@ namespace InverseKinematics2D
                     prevBends[activeIndex] = lastBends[activeIndex];
                     lastBends[activeIndex] = reverseBend;
                     // arc angle interval from prevBend to lastBend
-                    activeInterval = ik.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
-                    inactiveInterval = ik.AngleInterval(prevBends[inactiveIndex], lastBends[inactiveIndex]);
+                    activeInterval = IK2.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
+                    inactiveInterval = IK2.AngleInterval(prevBends[inactiveIndex], lastBends[inactiveIndex]);
 
                     angles[activeIndex].Insert(insertI[activeIndex], activeInterval[(int)activeSide]);
                     regions[activeIndex].Insert(insertI[activeIndex], new MinReachRegion(inactiveSide, k[activeIndex] - 1));
@@ -904,11 +903,11 @@ namespace InverseKinematics2D
                     CircleIntersection intersection = new Circle(c1, r1.magnitude).IntersectWithCircle(new Circle(c2, r2.magnitude));
 
                     // there is an intersection in valid angle intervals
-                    Interval arcIntersection = Interval.Overlap(new Interval(ik.Angle(prevBends[inactiveIndex]), ik.Angle(lastBends[inactiveIndex])),
-                        new Interval(ik.Angle(prevBends[activeIndex]), ik.Angle(lastBends[activeIndex])));
-                    if (arcIntersection.Contains(ik.Angle(intersection.p1)))
+                    Interval arcIntersection = Interval.Overlap(new Interval(IK2.Angle(prevBends[inactiveIndex]), IK2.Angle(lastBends[inactiveIndex])),
+                        new Interval(IK2.Angle(prevBends[activeIndex]), IK2.Angle(lastBends[activeIndex])));
+                    if (arcIntersection.Contains(IK2.Angle(intersection.p1)))
                     {
-                        angles[activeIndex].Insert(insertI[activeIndex], ik.Angle(intersection.p1));
+                        angles[activeIndex].Insert(insertI[activeIndex], IK2.Angle(intersection.p1));
                         insertI[activeIndex]++;
                         break;
                     }
@@ -918,7 +917,7 @@ namespace InverseKinematics2D
                         Vector2 reverseBend = ik.FollowChain(new IndexRangeK(range.startN, k[activeIndex], range.endN), inactiveSide, activeSide);
                         prevBends[activeIndex] = lastBends[activeIndex];
                         lastBends[activeIndex] = reverseBend;
-                        Interval activeInterval = ik.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
+                        Interval activeInterval = IK2.AngleInterval(prevBends[activeIndex], lastBends[activeIndex]);
 
                         //Debug.DrawAngle(Vector3.zero, activeInterval[inactiveIndex], 10, Color.white, 10);
                         angles[activeIndex].Insert(insertI[activeIndex], activeInterval[inactiveIndex]);
@@ -990,14 +989,14 @@ namespace InverseKinematics2D
                     for (int j = range.startN; j < regions[i].MoveChainIndex; j++)
                     {
                         angleSum += ik[j].angleLimit[(int)regions[i].StartSide];
-                        center += ik.Vector(angleSum, ik[j].length);
+                        center += IK2.Vector(angleSum, ik[j].length);
                     }
                     angleSum = 0;
                     Vector2 movingPart = Vector2.zero;
                     for (int j = regions[i].MoveChainIndex; j < range.endN; j++)
                     {
                         angleSum += ik[j].angleLimit[(int)regions[i].ContinueSide];
-                        movingPart += ik.Vector(angleSum, ik[j].length);
+                        movingPart += IK2.Vector(angleSum, ik[j].length);
                     }
 
                     return new Circle(center, movingPart.magnitude).IntersectWithLine(angle).p1.magnitude; // TODO: why is everywhere p1 used???
@@ -1015,9 +1014,9 @@ namespace InverseKinematics2D
         public Interval GetCircleInterval(IK2 ik, int i)
         {
             Vector2 center = ik.FollowChain(new IndexRange(range.startN, regions[i].MoveChainIndex), regions[i].StartSide, out _);
-            Vector2 v1 = ik.Vector(angles[i], Get(ik, angles[i]));
-            Vector2 v2 = ik.Vector(angles[i + 1], Get(ik, angles[i + 1]));
-            return new Interval(ik.Angle(v1 - center), ik.Angle(v2 - center));
+            Vector2 v1 = IK2.Vector(angles[i], Get(ik, angles[i]));
+            Vector2 v2 = IK2.Vector(angles[i + 1], Get(ik, angles[i + 1]));
+            return new Interval(IK2.Angle(v1 - center), IK2.Angle(v2 - center));
         }
 
         public int AngleCount { get { return angles.Length; } }
@@ -1045,7 +1044,7 @@ namespace InverseKinematics2D
             angleSums = new Interval[range.Size];
             for (int i = range.startN; i < range.endN; i++)
             {
-                angleSums[i - range.startN] = ik.AngleInterval(
+                angleSums[i - range.startN] = IK2.AngleInterval(
                     ik.FollowChain(new IndexRangeK(range.startN, i + 1, range.endN), IntervalSide.Min, IntervalSide.Center),
                     ik.FollowChain(new IndexRangeK(range.startN, i + 1, range.endN), IntervalSide.Max, IntervalSide.Center));
             }
@@ -1135,7 +1134,7 @@ namespace InverseKinematics2D
                 Vector2 v2 = ik.FollowChain(new IndexRangeK(range.startN, index + 1, range.endN), side, IntervalSide.Center);
                 v1 = v1 - center;
                 v2 = v2 - center;
-                return ik.AngleInterval(v1, v2);
+                return IK2.AngleInterval(v1, v2);
             }
         }
 
