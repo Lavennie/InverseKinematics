@@ -12,7 +12,15 @@ namespace InverseKinematics2D
         public Transform target;
         public IK2Segment[] segments;
 
+        /// <summary>
+        /// At index i, contains reach data if first (i + 1) indices can be bent and the rest are left extended
+        /// <para>i = 0 -> bend 1, i = 1 -> bend 2, ...</para>
+        /// </summary>
         private Reach[] dataFront;
+        /// <summary>
+        /// At index i, contains reach data of segments from i till the end of chain
+        /// <para>i = 0 -> all segments, i = 1 -> all but the first segment, ...</para>
+        /// </summary>
         private Reach[] dataBack;
 
         private Vector2 mousePos = Vector2.zero;
@@ -67,28 +75,45 @@ namespace InverseKinematics2D
             Align(Vector2.zero, mousePos, -45, segments.Length);
         }
 
-        public void Align(Vector3 origin, Vector2 target, float angle, int n, float prevAngle = 0)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="origin">In IK space</param>
+        /// <param name="target">In IK space, relative to (0,0). Stays through all recursive calls</param>
+        /// <param name="angle">Angles start at right axis of IK space</param>
+        /// <param name="n">How many segments from end of chain to use in calculation [1, <see cref="SegmentCount"/>]</param>
+        /// <param name="prevAngle"></param>
+        public void Align(Vector2 origin, Vector2 target, float angle, int n, float prevAngle = 0)
         {
+            // everything except the actual rotation of segments is done in IK space
+            // index of the first segment used
+            int segmentI = SegmentCount - n;
+            // align the last segment of the chain
             if (n == 1)
             {
-                Debug.DrawRay(transform.TransformPoint(origin), transform.TransformVector((target - (Vector2)origin).normalized * segments[segments.Length - 1].length), Color.cyan);
+                Debug.Log(origin);
+                Debug.Log(target);
+                Debug.Log(IKSpaceToWorldDir(target - origin));
+                segments[segmentI].transform.rotation = Quaternion.FromToRotation(Vector3.right, IKSpaceToWorldDir(target - origin));
                 return;
             }
-            Debug.DrawPoint(transform.TransformPoint(target), Color.white, 3);
+            // draw target point
+            Debug.DrawPoint(IKSpaceToWorldPoint(target), Color.white, 3);
 
-            int segmentI = segments.Length - n;
+            // displace start of chain so that the start of second used segment (from which reach is made) is at (0, 0)
+            // displaced chain starts at (-length of first used segment, 0) and faces right by default
+            // circle that passes through target and is centered at start of chain
             Circle targetCircle = new Circle(new Vector2(-segments[segmentI].length, 0), Vector3.Distance(origin, target));
 
+            // where segments without the first one can reach
             Reach smallerReach = dataBack[segmentI + 1];
-            float amin = segments[segmentI].angleLimit.min;
-            float amax = segments[segmentI].angleLimit.max;
-            Vector3 c1 = Vector(amin, segments[segmentI].length);
-            Vector3 c2 = Vector(amax, segments[segmentI].length);
-            float rotDebugAngle = prevAngle + ((segments[segmentI].targetAngle * 2) - 1) * 180;
-            Vector2 localTarget = new Vector2(float.NaN, float.NaN);
+            // first segment at min/max bend
+            Vector2 bendMin = Vector(segments[segmentI].angleLimit.min, segments[segmentI].length);
+            Vector2 bendMax = Vector(segments[segmentI].angleLimit.max, segments[segmentI].length);
+            // stores the target position relative to parent of first used segment
             Vector2 toTarget = target - (Vector2)origin;
             float ta = Mathf.DeltaAngle(prevAngle, Angle(toTarget));
-            localTarget = Vector(ta, toTarget.magnitude);
+            Vector2 localTarget = Vector(ta, toTarget.magnitude);
 
             // get intersection intervals between target circle and reach (facing directly right)
             List<Vector2> minPoints = new List<Vector2>();
@@ -142,8 +167,11 @@ namespace InverseKinematics2D
                 }
             }
 
+            // create a multiinterval of angles from the min/max intersection points
+            // intervals represent the valid angles for rotation of the first used segment
             #region multiinterval magic
 
+            // fixing errors in points because of float calculation errors
             if (maxPoints.Count == 0)
             {
                 float a = Angle(target);
@@ -225,17 +253,10 @@ namespace InverseKinematics2D
             }
             #endregion
 
-            float targetAngle;
-            if (segmentI > 0)
-            {
-                targetAngle = Angle(target - (Vector2)(origin - (Vector3)Vector(prevAngle, segments[segmentI - 1].length)));
-            }
-            else
-            {
-                targetAngle = Angle(target);
-            }
-            targetAngle = Angle(localTarget);
-            float partAngle;
+            // angle to target in space of parent of the first used segment
+            float targetAngle = Angle(localTarget);
+            // angle of first used segment in IK space
+            float partAngle; // TODO: part angle is null quite often
             if (intervals.Count == 1 && intervals[0].IsPoint())
             {
                 partAngle = prevAngle + targetAngle - intervals[0].min;
@@ -257,8 +278,9 @@ namespace InverseKinematics2D
                 MultiInterval mi = new MultiInterval(angleOffsets);
                 partAngle = prevAngle + mi.GetConnected(segments[segmentI].targetAngle);
             }
-            Vector3 partVec = Vector(partAngle, segments[segmentI].length);
-            Debug.DrawRay(transform.TransformPoint(origin), transform.TransformVector(partVec), Color.cyan);
+            Debug.Log(partAngle);
+            Vector2 partVec = Vector(partAngle, segments[segmentI].length);
+            segments[segmentI].transform.rotation = Quaternion.FromToRotation(Vector3.right, IKSpaceToWorldDir(partVec));
 
             Align(origin + partVec, target, angle, n - 1, partAngle);
         }
@@ -273,6 +295,26 @@ namespace InverseKinematics2D
             return radius * new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad));
         }
 
+        public Vector3 IKSpaceToWorldDir(Vector2 ikSpace)
+        {
+            return transform.TransformDirection(ikSpace);
+        }
+        public Vector2 WorldToIKSpaceDir(Vector3 world)
+        {
+            return transform.TransformDirection(world);
+        }
+        public Vector3 IKSpaceToWorldPoint(Vector2 ikSpace)
+        {
+            return transform.TransformPoint(ikSpace);
+        }
+        public Vector2 WorldToIKSpacePoint(Vector3 world)
+        {
+            return transform.InverseTransformPoint(world);
+        }
+        public Vector2 GetPosInIKSpace(IK2Segment segment)
+        {
+            return WorldToIKSpacePoint(segment.transform.position);
+        }
         /// <summary>
         /// Get the local end point if first couple of segments are completely bend to one side and the rest to the other side
         /// <para>[<see cref="IndexRange.startN"/>, <see cref="IndexRangeK.k"/>) -> <paramref name="limitIndex1"/></para>
@@ -353,18 +395,6 @@ namespace InverseKinematics2D
         /// <param name="i">Index to get segment by</param>
         /// <returns>Segment at index</returns>
         public IK2Segment this[int i] { get { return segments[i]; } }
-        /// <summary>
-        /// IK space x axis vector in 3D
-        /// </summary>
-        public Vector3 Right { get { return transform.forward; } }
-        /// <summary>
-        /// IK space y axis vector in 3D
-        /// </summary>
-        public Vector3 Up { get { return transform.up; } }
-        /// <summary>
-        /// IK space z axis vector in 3D
-        /// </summary>
-        public Vector3 RotateAxis { get { return transform.right; } }
     }
 
     /// <summary>
