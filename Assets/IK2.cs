@@ -91,9 +91,6 @@ namespace InverseKinematics2D
             // align the last segment of the chain
             if (n == 1)
             {
-                Debug.Log(origin);
-                Debug.Log(target);
-                Debug.Log(IKSpaceToWorldDir(target - origin));
                 segments[segmentI].transform.rotation = Quaternion.FromToRotation(Vector3.right, IKSpaceToWorldDir(target - origin));
                 return;
             }
@@ -264,6 +261,7 @@ namespace InverseKinematics2D
             else
             {
                 List<Interval> angleOffsets = new List<Interval>();
+                float fallbackPoint = float.NaN; // if there are no valid intervals pick "best" point in constraint interval
                 for (int i = 0; i < intervals.Count; i++)
                 {
                     Interval valid = Interval.Overlap(new Interval(targetAngle - intervals[i].min, targetAngle - intervals[i].max), segments[segmentI].angleLimit);
@@ -272,13 +270,27 @@ namespace InverseKinematics2D
                     {
                         angleOffsets.Add(valid);
                     }
+                    else if (angleOffsets.Count == 0 && float.IsNaN(fallbackPoint))
+                    {
+                        fallbackPoint = Interval.ClampTo(targetAngle - intervals[i].min, segments[segmentI].angleLimit);
+                    }
                 }
-                angleOffsets.Sort((a, b) => a.min.CompareTo(b.min));
+                if (angleOffsets.Count > 0)
+                {
+                    angleOffsets.Sort((a, b) => a.min.CompareTo(b.min));
 
-                MultiInterval mi = new MultiInterval(angleOffsets);
-                partAngle = prevAngle + mi.GetConnected(segments[segmentI].targetAngle);
+                    for (int i = 0; i < angleOffsets.Count; i++)
+                    {
+                    }
+
+                    MultiInterval mi = new MultiInterval(angleOffsets);
+                    partAngle = prevAngle + mi.GetConnected(segments[segmentI].targetAngle);
+                }
+                else
+                {
+                    partAngle = prevAngle + fallbackPoint;
+                }
             }
-            Debug.Log(partAngle);
             Vector2 partVec = Vector(partAngle, segments[segmentI].length);
             segments[segmentI].transform.rotation = Quaternion.FromToRotation(Vector3.right, IKSpaceToWorldDir(partVec));
 
@@ -536,6 +548,12 @@ namespace InverseKinematics2D
 
         public float GetConnected(float t)
         {
+            if (intervals.Count == 0) { return float.NaN; }
+            if (sum <= float.Epsilon)
+            {
+                int intervalIndex = Mathf.RoundToInt(t * intervals.Count);
+                return intervals[intervalIndex].min;
+            } 
             float value = float.NaN;
             float tempValue = Mathf.Lerp(0, 1, t);
             float prevEnd = 0;
