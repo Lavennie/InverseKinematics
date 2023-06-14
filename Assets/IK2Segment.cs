@@ -9,6 +9,8 @@ namespace InverseKinematics2D
         public Interval angleLimit;
         [Range(0, 1)] public float targetAngle = 0.5f;
 
+        public bool debug = true;
+
         private Color debugColor;
 
         private void OnValidate()
@@ -32,14 +34,22 @@ namespace InverseKinematics2D
 
         private void OnDrawGizmos()
         {
+            if (!debug)
+            {
+                return;
+            }
             Color originalColor = Gizmos.color;
             Gizmos.color = debugColor;
             Gizmos.matrix = Matrix4x4.TRS(transform.position + transform.right * length / 2, transform.rotation, new Vector3(length, 0.2f, 0.2f));
             Gizmos.DrawCube(Vector3.zero, Vector3.one);
             Gizmos.matrix = Matrix4x4.identity;
-            Gizmos.DrawRay(transform.position, Quaternion.AngleAxis(angleLimit.min, transform.forward) * transform.parent.right);
-            Gizmos.DrawRay(transform.position, Quaternion.AngleAxis(angleLimit.max, transform.forward) * transform.parent.right);
+            Gizmos.DrawRay(transform.position, Quaternion.AngleAxis(angleLimit.min, transform.forward) * transform.parent.right * length);
+            Gizmos.DrawRay(transform.position, Quaternion.AngleAxis(angleLimit.max, transform.forward) * transform.parent.right * length);
             Gizmos.color = originalColor;
+
+
+            IK2 ik = GetComponentInParent<IK2>();
+            ik.DebugSegmentReach(this, ReachDebugMode.Back, debugColor);
         }
     }
 }

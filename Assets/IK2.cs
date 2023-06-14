@@ -30,7 +30,7 @@ namespace InverseKinematics2D
         {
             Init();
         }
-        private void Init()
+        public void Init()
         {
             dataFront = new Reach[segments.Length];
             int i = 0;
@@ -95,7 +95,7 @@ namespace InverseKinematics2D
                 return;
             }
             // draw target point
-            Debug.DrawPoint(IKSpaceToWorldPoint(target), Color.white, 3);
+            //Debug.DrawPoint(IKSpaceToWorldPoint(target), Color.white, 3);
 
             // displace start of chain so that the start of second used segment (from which reach is made) is at (0, 0)
             // displaced chain starts at (-length of first used segment, 0) and faces right by default
@@ -113,6 +113,7 @@ namespace InverseKinematics2D
             Vector2 localTarget = Vector(ta, toTarget.magnitude);
 
             // get intersection intervals between target circle and reach (facing directly right)
+            // relative to smaller reach that is facing directly right
             List<Vector2> minPoints = new List<Vector2>();
             List<Vector2> maxPoints = new List<Vector2>();
             foreach (var circleInterval in smallerReach.GetMinCircles(this))
@@ -139,6 +140,7 @@ namespace InverseKinematics2D
                         break;
                 }
             }
+            (Vector2 point, float dist) bestUnused = (new Vector2(float.NaN, float.NaN), float.MaxValue);
             foreach (var circleInterval in smallerReach.GetMaxCircles(this))
             {
                 Circle circle = circleInterval.Key;
@@ -147,7 +149,7 @@ namespace InverseKinematics2D
                 switch (Inter.Type)
                 {
                     case CircleIntersection.Variant.Touching:
-                        maxPoints.Add(Inter.p1 + new Vector2(segments[segmentI].length, 0));
+                        maxPoints.Add(Inter.p1);
                         break;
                     case CircleIntersection.Variant.Intersect:
                         float a1 = Angle(Inter.p1 - circle.center);
@@ -156,47 +158,62 @@ namespace InverseKinematics2D
                         {
                             maxPoints.Add(Inter.p1);
                         }
+                        // save the "best" point that won't be added to maxPoint, no point to add will be found,
+                        // so that this "best" point can be used as max point
+                        else if (maxPoints.Count == 0)
+                        {
+                            float error = Mathf.Min(Mathf.Abs(a1 - circleInterval.Value[0]), Mathf.Abs(a1 - circleInterval.Value[1]));
+                            if (error < bestUnused.dist)
+                            {
+                                bestUnused = (Inter.p1, error);
+                            }
+                        }
                         if (circleInterval.Value.Contains(a2))
                         {
                             maxPoints.Add(Inter.p2);
                         }
+                        // save the "best" point for other intersection
+                        else if (maxPoints.Count == 0)
+                        {
+                            float error = Mathf.Min(Mathf.Abs(a2 - circleInterval.Value[0]), Mathf.Abs(a2 - circleInterval.Value[1]));
+                            if (error < bestUnused.dist)
+                            {
+                                bestUnused = (Inter.p2, error);
+                            }
+                        }
                         break;
+                    // MISS option handled in fallback
                 }
             }
+            // float error hardcoded fallback
+            if (maxPoints.Count == 0)
+            {
+                // during intersection all were misses (float error), use the farthest point possible
+                if (bestUnused.dist == float.MaxValue)
+                {
+                    maxPoints.Add(new Vector2(smallerReach.Get(this, 0).max, 0));
+                }
+                // use the fallback "best" point if no valid intersection point is found, when there were intersections
+                else
+                {
+                    maxPoints.Add(bestUnused.point);
+                }
+            }
+
+            // at this point maxPoints has at least 1 element, minPoints can have 0 or more
 
             // create a multiinterval of angles from the min/max intersection points
             // intervals represent the valid angles for rotation of the first used segment
             #region multiinterval magic
 
-            // fixing errors in points because of float calculation errors
-            if (maxPoints.Count == 0)
+            // if there are two or more swap (always exaclty 2), sort them by angle to them
+            if (maxPoints.Count >= 2 && Angle(maxPoints[0]) > Angle(maxPoints[1]))
             {
-                float a = Angle(target);
-                a = Interval.ClampTo(a, smallerReach.ValidInterval);
-                maxPoints.Add(Vector(a, smallerReach.Get(this, a).max));
+                Vector2 temp = maxPoints[0];
+                maxPoints[0] = maxPoints[1];
+                maxPoints[1] = temp;
             }
-            else if (maxPoints.Count == 1)
-            {
-                Vector2 v = FollowChain(new IndexRange(0, n - 1), IntervalSide.Min, out _);
-                if (Vector2.Distance(targetCircle.center, v) <= targetCircle.radius)
-                {
-                    maxPoints.Add(v);
-                }
-                v = FollowChain(new IndexRange(0, n - 1), IntervalSide.Max, out _);
-                if (Vector2.Distance(targetCircle.center, v) <= targetCircle.radius)
-                {
-                    maxPoints.Add(v);
-                }
-            }
-            else
-            {
-                if (Angle(maxPoints[0]) > Angle(maxPoints[1]))
-                {
-                    Vector2 temp = maxPoints[0];
-                    maxPoints[0] = maxPoints[1];
-                    maxPoints[1] = temp;
-                }
-            }
+            // sort min points by their angle to them
             minPoints.Sort((a, b) => Angle(a).CompareTo(Angle(b)));
 
             Interval newTargetInterval = new Interval(Angle(maxPoints[0]), Angle(maxPoints[1 % maxPoints.Count]));
@@ -206,6 +223,10 @@ namespace InverseKinematics2D
             {
                 if (minPoints.Count == 0)
                 {
+                    if (n == 4)
+                    {
+                        Debug.DrawPoint(maxPoints[0] - targetCircle.center, Color.red);
+                    }
                     intervals.Add(new Interval(Angle(maxPoints[0] - targetCircle.center), Angle(maxPoints[0] - targetCircle.center)));
                 }
                 else
@@ -249,11 +270,10 @@ namespace InverseKinematics2D
                 }
             }
             #endregion
-
             // angle to target in space of parent of the first used segment
             float targetAngle = Angle(localTarget);
             // angle of first used segment in IK space
-            float partAngle; // TODO: part angle is null quite often
+            float partAngle;
             if (intervals.Count == 1 && intervals[0].IsPoint())
             {
                 partAngle = prevAngle + targetAngle - intervals[0].min;
@@ -278,10 +298,6 @@ namespace InverseKinematics2D
                 if (angleOffsets.Count > 0)
                 {
                     angleOffsets.Sort((a, b) => a.min.CompareTo(b.min));
-
-                    for (int i = 0; i < angleOffsets.Count; i++)
-                    {
-                    }
 
                     MultiInterval mi = new MultiInterval(angleOffsets);
                     partAngle = prevAngle + mi.GetConnected(segments[segmentI].targetAngle);
@@ -367,6 +383,60 @@ namespace InverseKinematics2D
             return p;
         }
 
+        public void DebugSegmentReach(IK2Segment segment, ReachDebugMode mode, Color color)
+        {
+            int index = -1;
+            for (int i = 0; i < segments.Length; i++)
+            {
+                if (segments[i] == segment)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index == -1 || dataBack == null || dataBack.Length <= index) { return; }
+
+            Reach reach = mode == (ReachDebugMode.Front) ? dataFront[index] : dataBack[index];
+            foreach (var circleInterval in reach.GetMaxCircles(this))
+            {
+                Circle circle = new Circle(segment.transform.position + segment.transform.parent.rotation * circleInterval.Key.center, circleInterval.Key.radius);
+                DrawArc(circle, circleInterval.Value);
+            }
+            foreach (var circleInterval in reach.GetMinCircles(this))
+            {
+                Circle circle = new Circle(segment.transform.position + segment.transform.parent.rotation * circleInterval.Key.center, circleInterval.Key.radius);
+                DrawArc(circle, circleInterval.Value);
+            }
+
+            void DrawArc(Circle circle, Interval angleInterval)
+            {
+                const int SEGMENT_COUNT = 64;
+                if (circle.radius <= 0.0f) { return; }
+
+                float angleStep = ((angleInterval.max - angleInterval.min) / SEGMENT_COUNT);
+                angleStep *= Mathf.Deg2Rad;
+                angleInterval.min *= Mathf.Deg2Rad;
+                angleInterval.max *= Mathf.Deg2Rad;
+                Vector3 lineStart;
+                Vector3 lineEnd;
+                for (int i = 0; i < SEGMENT_COUNT; i++)
+                {
+                    lineStart = (Vector3)circle.center + segment.transform.parent.rotation * new Vector3(Mathf.Cos(angleInterval.min + angleStep * i), Mathf.Sin(angleInterval.min + angleStep * i)) * circle.radius;
+                    lineEnd = (Vector3)circle.center + segment.transform.parent.rotation * new Vector3(Mathf.Cos(angleInterval.min + angleStep * (i + 1)), Mathf.Sin(angleInterval.min + angleStep * (i + 1))) * circle.radius;
+
+                    Debug.DrawLine(lineStart, lineEnd, color);
+                }
+
+                //DrawPoint(circle.center, color, circle.radius / 10);
+            }
+            void DrawPoint(Vector3 position, Color color, float size = 0.1f)
+            {
+                Debug.DrawLine(position - new Vector3(size, 0, 0), position + new Vector3(size, 0, 0), color);
+                Debug.DrawLine(position - new Vector3(0, size, 0), position + new Vector3(0, size, 0), color);
+            }
+        }
+
         /// <summary>
         /// Create a vector in IK space at angle with length
         /// </summary>
@@ -409,6 +479,7 @@ namespace InverseKinematics2D
         public IK2Segment this[int i] { get { return segments[i]; } }
     }
 
+    [System.Serializable]
     /// <summary>
     /// A range of indices given with start and end index
     /// </summary>
@@ -423,10 +494,15 @@ namespace InverseKinematics2D
         /// </summary>
         public int endN;
 
-        public IndexRange(int startN, int partCount)
+        public IndexRange(int startN, int endN)
         {
             this.startN = startN;
-            this.endN = partCount;
+            this.endN = endN;
+        }
+
+        public override string ToString()
+        {
+            return $"{startN} -> {endN}";
         }
 
         /// <summary>
@@ -742,7 +818,11 @@ namespace InverseKinematics2D
     }
 
 
-
+    public enum ReachDebugMode
+    {
+        Front,
+        Back,
+    }
     [System.Serializable]
     public class Reach
     {
@@ -789,6 +869,10 @@ namespace InverseKinematics2D
 
         public MinReachData(IK2 ik, IndexRange range)
         {
+            if (range.startN == 1)
+            {
+                Debug.Log(range);
+            }
             this.range = new IndexRange(range.startN, range.endN);
 
             if (range.Size <= 0) { return; }
@@ -931,9 +1015,13 @@ namespace InverseKinematics2D
             if (k[activeIndex] <= range.endN)
             {
                 // bend last side until there is an intersection
-                int loopGuard = 100;
+                int loopGuard = 30;
                 do
                 {
+                    if (range.startN == 1)
+                    {
+                        Debug.Log(k[activeIndex] + " " + k[inactiveIndex] + " " + range.endN);
+                    }
                     // continue on other side because max bend has been reached
                     if (k[activeIndex] > range.endN || k[inactiveIndex] > range.endN + 1)
                     {
@@ -953,6 +1041,7 @@ namespace InverseKinematics2D
                     // there is an intersection in valid angle intervals
                     Interval arcIntersection = Interval.Overlap(new Interval(IK2.Angle(prevBends[inactiveIndex]), IK2.Angle(lastBends[inactiveIndex])),
                         new Interval(IK2.Angle(prevBends[activeIndex]), IK2.Angle(lastBends[activeIndex])));
+                    Debug.Log(arcIntersection + " -- " + IK2.Angle(intersection.p1));
                     if (arcIntersection.Contains(IK2.Angle(intersection.p1)))
                     {
                         angles[activeIndex].Insert(insertI[activeIndex], IK2.Angle(intersection.p1));
@@ -1022,6 +1111,14 @@ namespace InverseKinematics2D
                 for (int i = regions[1].Count - 1; i >= 0; i--)
                 {
                     this.regions[regions[0].Count + (regions[1].Count - 1 - i)] = regions[1][i];
+                }
+            }
+
+            if (range.startN == 1)
+            {
+                for (int i = 0; i < this.angles.Length; i++)
+                {
+                    Debug.DrawAngle(ik.segments[1].transform.position, this.angles[i], 10, Color.magenta, 10);
                 }
             }
         }
