@@ -11,7 +11,12 @@ namespace InverseKinematics2D
 
         public bool debug = true;
 
+        [Header("Lizard Extra")]
+        [Range(0.0f, 1.0f)] public float tension = 0.1f;
+
         private Color debugColor;
+
+        public float debugTension;
 
         private void OnValidate()
         {
@@ -30,6 +35,33 @@ namespace InverseKinematics2D
             {
                 transform.GetChild(0).transform.localPosition = new Vector3(length, 0, 0);
             }
+            debugTension = AppliedTension();
+        }
+
+        public float AppliedTension()
+        {
+            float angle = Vector2.SignedAngle(transform.parent.right, transform.right);
+            float minT = MinTEdgeAngle;
+            float maxT = MaxTEdgeAngle;
+
+            float dmin = minT - angle;
+            float dmax = angle - maxT;
+
+            // outside tension zone
+            if (dmin < 0 && dmax < 0)
+            {
+                return 0;
+            }
+            // on max side
+            else if (dmin < 0)
+            {
+                return Mathf.Pow(dmax / (angleLimit.max - maxT), 4);
+            }
+            // on min side
+            else
+            {
+                return Mathf.Pow(dmin / (minT - angleLimit.min), 4);
+            }
         }
 
         private void OnDrawGizmos()
@@ -45,11 +77,18 @@ namespace InverseKinematics2D
             Gizmos.matrix = Matrix4x4.identity;
             Gizmos.DrawRay(transform.position, Quaternion.AngleAxis(angleLimit.min, transform.forward) * transform.parent.right * length);
             Gizmos.DrawRay(transform.position, Quaternion.AngleAxis(angleLimit.max, transform.forward) * transform.parent.right * length);
+            Gizmos.DrawRay(transform.position, Quaternion.AngleAxis(MinTEdgeAngle, transform.forward) * transform.parent.right * length);
+            Gizmos.DrawRay(transform.position, Quaternion.AngleAxis(MaxTEdgeAngle, transform.forward) * transform.parent.right * length);
             Gizmos.color = originalColor;
 
 
             IK2 ik = GetComponentInParent<IK2>();
-            ik.DebugSegmentReach(this, ReachDebugMode.Back, debugColor);
+            ik?.DebugSegmentReach(this, ReachDebugMode.Back, debugColor);
         }
+
+        public float HalfAngle => (angleLimit.min + angleLimit.max) / 2 - angleLimit.min;
+        public float IdealAngle => (angleLimit.min + angleLimit.max) / 2;
+        public float MinTEdgeAngle => IdealAngle - HalfAngle * (1 - tension);
+        public float MaxTEdgeAngle => IdealAngle + HalfAngle * (1 - tension);
     }
 }

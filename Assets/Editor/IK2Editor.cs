@@ -16,7 +16,7 @@ namespace InverseKinematics2D
         }
     }
 
-    [CustomEditor(typeof(IK2Segment))]
+    [CustomEditor(typeof(IK2Segment)), CanEditMultipleObjects]
     public class IK2SegmentEditor : Editor
     {
         public override void OnInspectorGUI()

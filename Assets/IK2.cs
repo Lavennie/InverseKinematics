@@ -26,6 +26,8 @@ namespace InverseKinematics2D
         private Vector2 mousePos = Vector2.zero;
         private Vector2 reach = Vector2.zero;
 
+        public bool targetInRange = true;
+
         private void Awake()
         {
             Init();
@@ -63,9 +65,9 @@ namespace InverseKinematics2D
             }
             else
             {
-                mousePos = target.localPosition;
+                mousePos = transform.InverseTransformPoint(target.position);
             }
-            mousePos = ClampTarget(mousePos);
+            mousePos = ClampTarget(mousePos, out targetInRange);
             float angle = Mathf.Asin(mousePos.y / mousePos.magnitude) * Mathf.Rad2Deg;
 
             Interval reachInterval = dataFront[0].Get(this, angle);
@@ -313,14 +315,19 @@ namespace InverseKinematics2D
             Align(origin + partVec, target, angle, n - 1, partAngle);
         }
 
-        private Vector2 ClampTarget(Vector2 target)
+        public Vector2 ClampTarget(Vector2 target)
+        {
+            return ClampTarget(target, out _);
+        }
+        public Vector2 ClampTarget(Vector2 target, out bool wasInRange)
         {
             float angle = Angle(target);
             float radius = target.magnitude;
 
-            angle = Interval.ClampTo(angle, dataFront[0].ValidInterval);
-            radius = Interval.ClampTo(radius, dataFront[0].Get(this, angle));
-            return radius * new Vector2(Mathf.Cos(angle * Mathf.Deg2Rad), Mathf.Sin(angle * Mathf.Deg2Rad));
+            float newAngle = Interval.ClampTo(angle, dataFront[0].ValidInterval);
+            float newRadius = Interval.ClampTo(radius, dataFront[0].Get(this, angle));
+            wasInRange = Mathf.Abs(newAngle - angle) < 0.01f && Mathf.Abs(newRadius - radius) < 0.01f;
+            return newRadius * new Vector2(Mathf.Cos(newAngle * Mathf.Deg2Rad), Mathf.Sin(newAngle * Mathf.Deg2Rad));
         }
 
         public Vector3 IKSpaceToWorldDir(Vector2 ikSpace)
@@ -477,6 +484,7 @@ namespace InverseKinematics2D
         /// <param name="i">Index to get segment by</param>
         /// <returns>Segment at index</returns>
         public IK2Segment this[int i] { get { return segments[i]; } }
+        public bool TargetInRange => targetInRange;
     }
 
     [System.Serializable]
@@ -869,10 +877,6 @@ namespace InverseKinematics2D
 
         public MinReachData(IK2 ik, IndexRange range)
         {
-            if (range.startN == 1)
-            {
-                Debug.Log(range);
-            }
             this.range = new IndexRange(range.startN, range.endN);
 
             if (range.Size <= 0) { return; }
